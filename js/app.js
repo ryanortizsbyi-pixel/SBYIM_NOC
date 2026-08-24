@@ -19,13 +19,18 @@ class NOCApp {
   async init() {
     console.log('Initializing NOC Portal Application...');
     
-    // 1. Initialize UI & Auth
+    // 1. Await database initialization and automatic Supabase cloud connection
+    if (window.nocDB && window.nocDB.initPromise) {
+      await window.nocDB.initPromise;
+    }
+
+    // 2. Initialize UI & Auth
     window.nocUI.init();
 
-    // 2. Seed initial realistic database if empty
+    // 3. Seed initial realistic database if empty
     await window.seedInitialDatabaseIfEmpty();
 
-    // 3. Load all records from IndexedDB
+    // 4. Load all records from active database (Supabase Cloud or Local fallback)
     await this.refreshData();
 
     // 4. Bind event listeners

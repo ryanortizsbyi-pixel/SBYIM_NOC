@@ -8,8 +8,8 @@ class SupabaseConfigManager {
     this.STORAGE_KEY_URL = 'noc_supabase_url';
     this.STORAGE_KEY_KEY = 'noc_supabase_anon_key';
     
-    // Default placeholders or empty (can be populated by user via UI or pre-configured)
-    this.defaultUrl = '';
+    // Default placeholders or pre-configured project URL
+    this.defaultUrl = 'https://qstyziuwxklvcadqrho.supabase.co';
     this.defaultAnonKey = '';
     
     this.client = null;
