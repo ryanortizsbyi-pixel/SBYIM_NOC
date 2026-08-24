@@ -8,9 +8,9 @@ class SupabaseConfigManager {
     this.STORAGE_KEY_URL = 'noc_supabase_url';
     this.STORAGE_KEY_KEY = 'noc_supabase_anon_key';
     
-    // Default placeholders or pre-configured project URL
-    this.defaultUrl = 'https://qstyziuwxklvcadqrho.supabase.co';
-    this.defaultAnonKey = '';
+    // Default pre-configured Supabase Project URL & Anon Public API Key
+    this.defaultUrl = 'https://qstyziuwxklbvcadqrho.supabase.co';
+    this.defaultAnonKey = 'sb_publishable_iqh_iXjgVJAqL6BtMJsm_g_Oe43JJFE';
     
     this.client = null;
     this.isConnected = false;
@@ -25,7 +25,14 @@ class SupabaseConfigManager {
   getUrl() {
     try {
       const stored = localStorage.getItem(this.STORAGE_KEY_URL);
-      if (stored && stored.trim()) return stored.trim();
+      if (stored && stored.trim()) {
+        if (stored.includes('qstyziuwxklvcadqrho')) {
+          const corrected = stored.replace('qstyziuwxklvcadqrho', 'qstyziuwxklbvcadqrho');
+          localStorage.setItem(this.STORAGE_KEY_URL, corrected);
+          return corrected;
+        }
+        return stored.trim();
+      }
     } catch (e) {
       console.warn('Could not read Supabase URL from localStorage', e);
     }
