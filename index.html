@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NOC Portal - No Objection Certificate & Document Management System</title>
+  <meta name="description" content="Professional NOC Database and Document Management System with multi-file upload, in-app viewer, and role-based access control.">
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/jpeg" href="assets/sbyim_logo.jpg">
+  
+  <!-- Modern Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/viewer.css">
+</head>
+<body>
+
+  <!-- Top Sticky Navigation Bar -->
+  <header class="navbar">
+    <div class="navbar-container">
+      <div class="brand" id="brandLogo">
+        <div class="brand-icon">
+          <img src="assets/sbyim_logo.jpg" alt="SBYIM Logo" class="brand-logo-img">
+        </div>
+        <div>
+          <span class="brand-title">SBYIM NOC PORTAL</span>
+          <span class="brand-subtitle">Certificate & Document Database</span>
+        </div>
+      </div>
+
+      <!-- User Role Indicator & Quick Switcher -->
+      <div class="nav-actions">
+        <div class="user-role-badge" id="userRoleBadge" title="Current access mode">
+          <span class="role-dot admin"></span>
+          <span>Admin</span>
+        </div>
+        <button class="btn btn-primary" id="btnNewNoc">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          New NOC Record
+        </button>
+        <button class="btn btn-green" id="btnNocRequirements" title="NOC Requirements - View & Download Guidelines">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          NOC Requirements
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Wrapper -->
+  <main class="main-wrapper">
+    
+    <!-- Hero Banner & Overview -->
+    <section class="hero-section">
+      <div class="hero-banner">
+        <div class="hero-content">
+          <h1>No Objection Certificate Portal</h1>
+          <p>Centralized database repository for NOC compliance, permit tracking, multi-document PDF & image archiving, and verification.</p>
+        </div>
+        <div class="hero-actions">
+          <button class="btn btn-outline" id="btnExportCSV" title="Export database to CSV spreadsheet">
+            📊 Export CSV
+          </button>
+          <button class="btn btn-outline" id="btnExportJSON" title="Download complete JSON backup">
+            💾 Backup JSON
+          </button>
+          <button class="btn btn-outline" id="btnPrintReport" title="Print tabular report">
+            🖨️ Print
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Stats Summary Cards -->
+      <div class="stats-grid">
+        <div class="stat-card blue">
+          <div class="stat-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-label">Total NOC Records</div>
+            <div class="stat-value" id="statTotalNOC">0</div>
+          </div>
+        </div>
+
+        <div class="stat-card green">
+          <div class="stat-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-label">Active Permits</div>
+            <div class="stat-value text-green" id="statActiveNOC">0</div>
+          </div>
+        </div>
+
+        <div class="stat-card amber">
+          <div class="stat-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-label">Expiring Soon (&lt;30d)</div>
+            <div class="stat-value" style="color:#D97706;" id="statExpiringNOC">0</div>
+          </div>
+        </div>
+
+        <div class="stat-card rose">
+          <div class="stat-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="15" y1="9" x2="9" y2="15"></line>
+              <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-label">Expired Permits</div>
+            <div class="stat-value" style="color:#E11D48;" id="statExpiredNOC">0</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Controls, Filter & Search Bar -->
+    <section class="controls-card">
+      <div class="controls-wrapper">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchInput" class="search-input" placeholder="Search by NOC #, Client, Contractor, Type, or Description..." autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="filters-group">
+          <select id="filterStatus" class="select-filter">
+            <option value="all">All Statuses</option>
+            <option value="active">Active Only</option>
+            <option value="expiring">Expiring Soon (&lt;30 Days)</option>
+            <option value="expired">Expired Only</option>
+          </select>
+
+          <select id="filterNocType" class="select-filter">
+            <option value="all">All NOC Types</option>
+            <option value="Activity">Activity</option>
+            <option value="Activity NOC">Activity NOC</option>
+          </select>
+
+          <select id="filterSort" class="select-filter">
+            <option value="newest">Sort: Newest First</option>
+            <option value="oldest">Sort: Oldest First</option>
+            <option value="issuance">Sort: Issuance Date</option>
+            <option value="expiring">Sort: Expiration Date</option>
+            <option value="nocNumber">Sort: NOC Number</option>
+          </select>
+
+          <div class="view-toggle">
+            <button id="btnViewTable" class="view-btn active" title="Table View">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+            </button>
+            <button id="btnViewGrid" class="view-btn" title="Grid Card View">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Table View -->
+    <section class="table-container" id="tableViewContainer">
+      <div class="table-responsive">
+        <table class="noc-table" id="nocDataTable">
+          <thead>
+            <tr>
+              <th>NOC Number</th>
+              <th>NOC Type</th>
+              <th>Client</th>
+              <th>Issued To</th>
+              <th>Issuance Date</th>
+              <th>Expiration Date</th>
+              <th>Status</th>
+              <th>Documents</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="nocTableBody">
+            <!-- Dynamic rows rendered via ui.js -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Grid View -->
+    <section class="grid-container" id="gridViewContainer" style="display:none;">
+      <!-- Dynamic cards rendered via ui.js -->
+    </section>
+
+    <!-- Empty State -->
+    <section class="empty-state" id="emptyStateContainer" style="display:none;">
+      <div class="empty-icon">📁</div>
+      <h3 class="empty-title">No NOC Records Found</h3>
+      <p class="empty-text">No records match your search criteria or the database is currently empty.</p>
+      <button class="btn btn-primary" id="btnResetData">Restore Demo Records</button>
+    </section>
+
+    <!-- Guest Search Initial Prompt -->
+    <section class="empty-state" id="guestPromptContainer" style="display:none;">
+      <div class="empty-icon" style="background:var(--secondary-blue-light); color:var(--secondary-blue);">🔍</div>
+      <h3 class="empty-title">Guest Certificate Lookup</h3>
+      <p class="empty-text">Please enter an NOC Number, Client, or Contractor in the search bar above to look up and view certificate details.</p>
+    </section>
+
+  </main>
+
+  <!-- ==========================================================================
+       MODALS
+       ========================================================================== -->
+
+  <!-- 1. NOC Entry & Edit Modal -->
+  <div class="modal-overlay" id="nocEntryModal">
+    <div class="modal-container large">
+      <div class="modal-header">
+        <h3 class="modal-title" id="entryModalTitle">
+          <span style="color:var(--primary-blue)">📝</span> Create New NOC Record
+        </h3>
+        <button class="modal-close" id="btnCloseEntryModal">&times;</button>
+      </div>
+      <form id="nocEntryForm">
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" for="nocNumberInput">
+                NOC Number <span class="required">*</span>
+              </label>
+              <input type="text" id="nocNumberInput" class="form-input" placeholder="e.g. NOC-2026-0892" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="nocTypeSelect">
+                <span>NOC Type <span class="required">*</span></span>
+                <button type="button" class="type-hint-btn" id="nocTypeHint" title="Add a new custom NOC Type">+ Add New Type</button>
+              </label>
+              <div class="noc-type-select-wrapper">
+                <select id="nocTypeSelect" class="form-select" required>
+                  <option value="" disabled selected>-- Select NOC Type --</option>
+                  <!-- Dynamically populated via app.js -->
+                </select>
+              </div>
+              <div class="custom-type-container" id="customTypeContainer" style="display:none; margin-top:0.45rem;">
+                <div style="display:flex; gap:0.45rem; align-items:center;">
+                  <input type="text" id="nocTypeCustomInput" class="form-input" placeholder="Enter new NOC Type (e.g. Electrical, Drainage...)" autocomplete="off">
+                  <button type="button" class="btn btn-sm btn-outline" id="btnCancelCustomType" title="Cancel and return to dropdown" style="padding:0.6rem 0.8rem; white-space:nowrap;">Cancel</button>
+                </div>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.35rem; display:flex; align-items:center; gap:0.3rem;">
+                  <span>💡</span> <span>New NOC type will be saved and added to the dropdown menu.</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="dateIssuanceInput">
+                Date of Issuance <span class="required">*</span>
+              </label>
+              <input type="date" id="dateIssuanceInput" class="form-input" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="dateExpirationInput">
+                Date of Expiration <span class="required">*</span>
+              </label>
+              <input type="date" id="dateExpirationInput" class="form-input" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="clientInput">
+                Client (Owner / Authority) <span class="required">*</span>
+              </label>
+              <input type="text" id="clientInput" class="form-input" placeholder="e.g. Municipal Urban Development Authority" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="issuedToInput">
+                Issued To (Contractor / Company) <span class="required">*</span>
+              </label>
+              <input type="text" id="issuedToInput" class="form-input" placeholder="e.g. Apex Engineering & Infrastructure Ltd." required>
+            </div>
+
+            <div class="form-group col-span-2">
+              <label class="form-label" for="descriptionInput">
+                Description of Work <span class="required">*</span>
+              </label>
+              <textarea id="descriptionInput" class="form-textarea" placeholder="Detailed scope, location specifications, equipment details, and authorized work parameters..." required></textarea>
+            </div>
+
+            <!-- Multi-Document Upload (Up to 5 files) -->
+            <div class="form-group col-span-2" style="margin-top:0.5rem;">
+              <div class="form-label">
+                <span>Upload Documents (PDF or Images)</span>
+                <span style="font-weight: normal; color:var(--text-muted);" id="uploadSlotCount">0/5</span>
+              </div>
+              
+              <div class="dropzone" id="docDropzone">
+                <div class="dropzone-icon">☁️</div>
+                <div class="dropzone-text">Click or drag & drop files here to upload</div>
+                <div class="dropzone-subtext">Supported formats: PDF, PNG, JPG, JPEG, WEBP, SVG (Up to 5 files total)</div>
+                <input type="file" id="docFileInput" multiple accept=".pdf,image/*" style="display:none;">
+              </div>
+
+              <div class="doc-list-preview" id="docPreviewList">
+                <!-- Preview items added here -->
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" id="btnCancelEntry">Cancel</button>
+          <button type="submit" class="btn btn-green" id="btnSaveNoc">
+            💾 Save to Database
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. NOC Details & Document Modal -->
+  <div class="modal-overlay" id="nocDetailsModal">
+    <div class="modal-container large">
+      <div class="modal-header">
+        <h3 class="modal-title">
+          <span style="color:var(--accent-green)">📋</span> NOC Official Record Details
+        </h3>
+        <button class="modal-close" id="btnCloseDetailsModal">&times;</button>
+      </div>
+      <div class="modal-body" id="nocDetailsContent">
+        <!-- Rendered dynamically -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="window.nocUI.closeDetailsModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Delete Confirmation Modal -->
+  <div class="modal-overlay" id="deleteConfirmModal">
+    <div class="modal-container small">
+      <div class="modal-header">
+        <h3 class="modal-title" style="color:#DC2626;">
+          ⚠️ Confirm Deletion
+        </h3>
+        <button class="modal-close" id="btnCloseDeleteModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="deleteConfirmMessage" style="font-size:0.95rem; color:var(--text-main); line-height:1.5;">
+          Are you sure you want to delete this NOC record? This action will permanently remove the record and attached documents from the database.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" id="btnCancelDelete">Cancel</button>
+        <button type="button" class="btn btn-danger" id="btnConfirmDelete">Delete Record</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Role Switch / Login Modal (First Screen on Open) -->
+  <div class="modal-overlay" id="loginModal">
+    <div class="modal-container small" style="box-shadow:0 25px 50px -12px rgba(0, 0, 0, 0.25);">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <img src="assets/sbyim_logo.jpg" alt="SBYIM Logo" style="width:38px; height:38px; border-radius:6px; object-fit:contain; background:#fff; border:1px solid var(--border-light); padding:2px; box-shadow:var(--shadow-xs);">
+          <h3 class="modal-title">
+            NOC Portal Authentication
+          </h3>
+        </div>
+        <button class="modal-close" id="btnCloseLoginModal" title="Close dialog">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.88rem; color:var(--text-muted); margin-bottom:1.25rem; line-height:1.5;">
+          Please sign in to access the certificate and document management database:
+        </p>
+
+        <!-- Admin Login Form -->
+        <form id="loginForm" style="margin-bottom:1.25rem;">
+          <div class="form-group" style="margin-bottom:0.85rem;">
+            <label class="form-label" for="loginUsername">Admin Username</label>
+            <input type="text" id="loginUsername" class="form-input" placeholder="Enter username" autocomplete="username" required>
+          </div>
+          <div class="form-group" style="margin-bottom:1.15rem;">
+            <label class="form-label" for="loginPassword">Admin Password</label>
+            <input type="password" id="loginPassword" class="form-input" placeholder="Enter password" autocomplete="current-password" required>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">
+            🛡️ Log In as Admin
+          </button>
+        </form>
+
+        <div style="text-align:center; position:relative; margin-bottom:1.25rem;">
+          <hr style="border:none; border-top:1px solid var(--border-light);">
+          <span style="position:absolute; top:-10px; left:50%; transform:translateX(-50%); background:#fff; padding:0 0.5rem; font-size:0.75rem; color:var(--text-light); font-weight:600;">OR CONTINUE AS GUEST</span>
+        </div>
+
+        <!-- Quick Guest Access Button -->
+        <div>
+          <button type="button" class="btn btn-outline-primary" style="width:100%; justify-content:space-between;" id="btnQuickGuest">
+            <span>👁️ Quick Access as <strong>Guest</strong></span>
+            <span style="font-size:0.78rem; opacity:0.85;">View & Download Only</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. NOC Requirements Modal (Up to 5 Documents) -->
+  <div class="modal-overlay" id="nocRequirementsModal">
+    <div class="modal-container" style="max-width:760px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <h3 class="modal-title">
+            <span style="color:var(--primary-blue)">📋</span> NOC Official Requirements
+          </h3>
+          <span class="badge" id="reqDocCountBadge" style="background:#EFF6FF; color:#1E40AF; border:1px solid #BFDBFE; font-weight:700; font-size:0.78rem;">
+            0 / 5 Documents
+          </span>
+        </div>
+        <button class="modal-close" id="btnCloseRequirementsModal">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height:75vh; overflow-y:auto;">
+        <!-- Admin Upload Section (Admin Only) -->
+        <div id="adminReqUploadSection" style="margin-bottom:1.5rem;">
+          <div class="dropzone" id="reqDropzone" style="padding:1.5rem; background:linear-gradient(135deg, #EFF6FF 0%, #F0FDF4 100%); border:2px dashed #93C5FD;">
+            <div class="dropzone-icon" style="font-size:2rem; margin-bottom:0.4rem;">📤</div>
+            <div class="dropzone-text" style="font-size:0.95rem; font-weight:600; color:var(--text-main);">
+              Click or drag & drop requirement files to upload
+            </div>
+            <div class="dropzone-subtext" style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">
+              Upload up to 5 documents (PDF, DOC, DOCX, or Image formats). Max 25MB per file.
+            </div>
+            <input type="file" id="reqFilesInput" multiple accept=".pdf,.doc,.docx,.rtf,.png,.jpg,.jpeg,.webp,.svg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*" style="display:none;">
+          </div>
+        </div>
+
+        <!-- Guest Read-Only Notice (Guest Only) -->
+        <div id="guestReqNotice" style="display:none; background:#EFF6FF; border:1px solid #BFDBFE; border-radius:var(--radius-md); padding:0.9rem 1.25rem; color:#1E40AF; font-size:0.86rem; margin-bottom:1.25rem;">
+          ℹ️ <strong>Guest Mode:</strong> You can view and download all official NOC requirement documents below. Uploading and modifying documents requires administrator privileges.
+        </div>
+
+        <!-- Requirements Documents List / Gallery -->
+        <div>
+          <h4 style="font-size:0.92rem; font-weight:700; color:var(--text-main); margin-bottom:0.75rem; display:flex; align-items:center; justify-content:space-between;">
+            <span>Official Guidelines & Compliance Files</span>
+            <span style="font-size:0.78rem; font-weight:500; color:var(--text-muted);">PDF / Images can be viewed in-app</span>
+          </h4>
+          <div id="reqDocumentsContainer" style="display:flex; flex-direction:column; gap:0.75rem;">
+            <!-- Document items dynamically rendered here -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content:space-between;">
+        <button type="button" class="btn btn-green" id="btnDownloadAllReqDocs">
+          📥 Download All Documents
+        </button>
+        <button type="button" class="btn btn-outline" id="btnCloseReqModalFooter">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. In-App Document Viewer Stage Modal -->
+  <div class="viewer-overlay" id="documentViewerOverlay">
+    <div class="viewer-header">
+      <div class="viewer-file-info">
+        <span class="viewer-badge pdf" id="viewerBadge">PDF</span>
+        <span class="viewer-title" id="viewerTitle">Document Title</span>
+      </div>
+
+      <div class="viewer-controls">
+        <button class="viewer-btn" id="viewerZoomInBtn" title="Zoom In (+)">🔍+</button>
+        <button class="viewer-btn" id="viewerZoomOutBtn" title="Zoom Out (-)">🔍-</button>
+        <button class="viewer-btn" id="viewerRotateBtn" title="Rotate 90°">🔄 Rotate</button>
+        <button class="viewer-btn" id="viewerResetBtn" title="Reset View">↔️ Fit</button>
+        <button class="viewer-btn primary" id="viewerDownloadBtn" title="Download Document">📥 Download</button>
+        <button class="viewer-close-btn" id="viewerCloseBtn" title="Close Viewer (Esc)">✕ Close</button>
+      </div>
+    </div>
+
+    <!-- Main Stage -->
+    <div class="viewer-body">
+      <button class="viewer-nav-btn prev" id="viewerPrevBtn" title="Previous Document (&larr;)">&larr;</button>
+      <div class="viewer-stage" id="viewerStage">
+        <!-- PDF frame or Image wrapper rendered dynamically -->
+      </div>
+      <button class="viewer-nav-btn next" id="viewerNextBtn" title="Next Document (&rarr;)">&rarr;</button>
+    </div>
+
+    <!-- Thumbnails Bottom Carousel -->
+    <div class="viewer-footer" id="viewerThumbs">
+      <!-- Thumbnail items -->
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Scripts -->
+  <script src="js/db.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/seedData.js"></script>
+  <script src="js/docViewer.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
