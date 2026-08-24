@@ -264,6 +264,82 @@ button, input, select, textarea {
   box-shadow: 0 0 8px var(--secondary-blue);
 }
 
+/* Supabase Database Status Badge */
+.db-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-xs);
+}
+
+.db-status-badge:hover {
+  background: var(--bg-subtle);
+  border-color: var(--primary-blue);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.db-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #F59E0B;
+  box-shadow: 0 0 6px #F59E0B;
+  transition: all var(--transition-normal);
+}
+
+.db-status-dot.connected {
+  background: #10B981;
+  box-shadow: 0 0 8px #10B981;
+}
+
+.db-status-dot.disconnected {
+  background: #F59E0B;
+  box-shadow: 0 0 6px #F59E0B;
+}
+
+.db-status-dot.error {
+  background: #E11D48;
+  box-shadow: 0 0 8px #E11D48;
+}
+
+/* Supabase Status Modal Card */
+.db-status-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem;
+  background: linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%);
+  border: 1px solid #BFDBFE;
+  border-radius: var(--radius-md);
+}
+
+.db-status-icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background: #FFFFFF;
+  border: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-xs);
+}
+
+.db-status-info-box {
+  flex: 1;
+}
+
 /* ==========================================================================
    Buttons & Badges
    ========================================================================== */

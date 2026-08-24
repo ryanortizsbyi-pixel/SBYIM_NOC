@@ -35,6 +35,12 @@
 
       <!-- User Role Indicator & Quick Switcher -->
       <div class="nav-actions">
+        <!-- Supabase Database Status Badge -->
+        <button class="db-status-badge" id="btnDatabaseConfig" title="Click to manage Supabase PostgreSQL database connection & schema">
+          <span class="db-status-dot" id="dbStatusDot"></span>
+          <span id="dbStatusText">Database: Local</span>
+        </button>
+
         <div class="user-role-badge" id="userRoleBadge" title="Current access mode">
           <span class="role-dot admin"></span>
           <span>Admin</span>
@@ -482,7 +488,118 @@
     </div>
   </div>
 
-  <!-- 6. In-App Document Viewer Stage Modal -->
+  <!-- 6. Supabase / PostgreSQL Database Settings Modal -->
+  <div class="modal-backdrop" id="databaseModal">
+    <div class="modal-card" style="max-width:760px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" style="display:flex; align-items:center; gap:0.5rem;">
+            <span>⚡</span>
+            <span>Supabase / PostgreSQL Database</span>
+          </h3>
+          <p class="modal-subtitle">Connect your cloud Supabase database, run PostgreSQL schema migrations, and sync data.</p>
+        </div>
+        <button class="modal-close" id="btnCloseDatabaseModal">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height:75vh; overflow-y:auto; display:flex; flex-direction:column; gap:1.25rem;">
+        
+        <!-- Live Connection Status Card -->
+        <div class="db-status-card" id="dbStatusCard">
+          <div class="db-status-icon-box" id="dbStatusIconBox">
+            <span style="font-size:1.5rem;" id="dbStatusIcon">🟡</span>
+          </div>
+          <div class="db-status-info-box">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <strong style="font-size:0.95rem;" id="dbStatusHeading">Local Persistent Storage Mode</strong>
+              <span class="badge" id="dbStatusPill" style="background:#FEF3C7; color:#B45309;">Offline / Local</span>
+            </div>
+            <p style="font-size:0.82rem; color:var(--text-muted); margin-top:0.2rem;" id="dbStatusMessage">
+              Data is stored securely in your browser's IndexedDB and localStorage. Connect Supabase to enable cloud sync and PostgreSQL persistence.
+            </p>
+          </div>
+        </div>
+
+        <!-- Supabase Project Credentials Form -->
+        <div id="supabaseCredentialsSection" style="background:var(--bg-surface); border:1px solid var(--border-light); border-radius:var(--radius-md); padding:1.25rem;">
+          <h4 style="font-size:0.95rem; font-weight:700; color:var(--text-main); margin-bottom:0.85rem; display:flex; align-items:center; gap:0.4rem;">
+            <span>🔑</span>
+            <span>Supabase API Credentials</span>
+          </h4>
+          
+          <div class="form-group" style="margin-bottom:1rem;">
+            <label for="inputSupabaseUrl" style="font-size:0.82rem; font-weight:600; color:var(--text-main); display:flex; justify-content:space-between;">
+              <span>Supabase Project URL</span>
+              <span style="color:var(--text-muted); font-weight:400;">e.g., https://your-project.supabase.co</span>
+            </label>
+            <input type="url" id="inputSupabaseUrl" class="form-control" placeholder="https://xxxxxxxxxxxxxxxx.supabase.co" spellcheck="false" autocomplete="off">
+          </div>
+
+          <div class="form-group" style="margin-bottom:1rem;">
+            <label for="inputSupabaseKey" style="font-size:0.82rem; font-weight:600; color:var(--text-main); display:flex; justify-content:space-between;">
+              <span>Supabase Anon Public API Key</span>
+              <span style="color:var(--text-muted); font-weight:400;">Project Settings > API > anon / public</span>
+            </label>
+            <input type="password" id="inputSupabaseKey" class="form-control" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." spellcheck="false" autocomplete="off">
+          </div>
+
+          <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-top:1rem;">
+            <div style="display:flex; gap:0.6rem;">
+              <button type="button" class="btn btn-primary" id="btnSaveSupabaseConfig">
+                💾 Save & Connect
+              </button>
+              <button type="button" class="btn btn-outline" id="btnTestSupabaseConnection">
+                🔌 Test Connection
+              </button>
+            </div>
+            <button type="button" class="btn btn-outline text-rose" id="btnClearSupabaseConfig" style="border-color:#FDA4AF;">
+              Disconnect / Reset
+            </button>
+          </div>
+        </div>
+
+        <!-- 1-Click Sync Local Data to Supabase -->
+        <div id="supabaseSyncSection" style="background:linear-gradient(135deg, #EFF6FF 0%, #ECFDF5 100%); border:1px solid #BFDBFE; border-radius:var(--radius-md); padding:1.25rem;">
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem;">
+            <div>
+              <h4 style="font-size:0.92rem; font-weight:700; color:#1E40AF; margin-bottom:0.25rem;">
+                🔄 1-Click Data Synchronization
+              </h4>
+              <p style="font-size:0.82rem; color:#334155; margin:0;">
+                Push all current local records, requirements documents, and custom types to your Supabase PostgreSQL database.
+              </p>
+            </div>
+            <button type="button" class="btn btn-green" id="btnSyncToSupabase">
+              ⬆️ Sync to Supabase
+            </button>
+          </div>
+        </div>
+
+        <!-- PostgreSQL Schema & SQL Migration Script Viewer -->
+        <div id="supabaseSchemaSection" style="background:var(--bg-surface); border:1px solid var(--border-light); border-radius:var(--radius-md); padding:1.25rem;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem;">
+            <div>
+              <h4 style="font-size:0.95rem; font-weight:700; color:var(--text-main); margin-bottom:0.2rem;">
+                📄 PostgreSQL Schema (supabase_schema.sql)
+              </h4>
+              <p style="font-size:0.8rem; color:var(--text-muted); margin:0;">
+                Copy and run this SQL script in your Supabase SQL Editor to create tables, indexes, and security policies.
+              </p>
+            </div>
+            <button type="button" class="btn btn-outline" id="btnCopySqlSchema">
+              📋 Copy SQL
+            </button>
+          </div>
+          <pre id="sqlSchemaCodeBlock" style="max-height:220px; overflow:auto; background:#0F172A; color:#E2E8F0; padding:0.9rem; border-radius:var(--radius-sm); font-family:'JetBrains Mono', monospace; font-size:0.76rem; line-height:1.45;"></pre>
+        </div>
+
+      </div>
+      <div class="modal-footer" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-primary" id="btnCloseDatabaseModalFooter">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. In-App Document Viewer Stage Modal -->
   <div class="viewer-overlay" id="documentViewerOverlay">
     <div class="viewer-header">
       <div class="viewer-file-info">
@@ -518,7 +635,11 @@
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toastContainer"></div>
 
+  <!-- Supabase Official JavaScript SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <!-- Scripts -->
+  <script src="js/supabaseClient.js"></script>
   <script src="js/db.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/seedData.js"></script>

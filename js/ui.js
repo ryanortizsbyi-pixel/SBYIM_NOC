@@ -16,7 +16,18 @@ class UIManager {
    */
   init() {
     this.bindAuthEvents();
+    this.bindDatabaseEvents();
     this.updateUserBadge();
+    this.renderDatabaseStatus();
+  }
+
+  /**
+   * Listen to database and Supabase config changes
+   */
+  bindDatabaseEvents() {
+    window.addEventListener('noc:supabase-config-change', () => {
+      this.renderDatabaseStatus();
+    });
   }
 
   /**
@@ -99,7 +110,22 @@ class UIManager {
     const filterSort = document.getElementById('filterSort');
     const searchInput = document.getElementById('searchInput');
     const guestPromptText = document.querySelector('#guestPromptContainer .empty-text');
+    const credentialsSection = document.getElementById('supabaseCredentialsSection');
+    const syncSection = document.getElementById('supabaseSyncSection');
+    const schemaSection = document.getElementById('supabaseSchemaSection');
     const isAdmin = window.nocAuth.isAdmin();
+
+    if (credentialsSection) {
+      credentialsSection.style.display = isAdmin ? 'block' : 'none';
+    }
+
+    if (syncSection) {
+      syncSection.style.display = isAdmin ? 'block' : 'none';
+    }
+
+    if (schemaSection) {
+      schemaSection.style.display = isAdmin ? 'block' : 'none';
+    }
 
     if (badgeEl) {
       if (window.nocAuth.isLoggedIn()) {
@@ -202,6 +228,7 @@ class UIManager {
     this.closeDetailsModal();
     this.closeDeleteModal();
     this.closeRequirementsModal();
+    this.closeDatabaseModal();
     if (window.docViewer) {
       window.docViewer.close();
     }
@@ -984,6 +1011,204 @@ class UIManager {
    */
   closeRequirementsModal() {
     const modal = document.getElementById('nocRequirementsModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  /**
+   * Returns the complete PostgreSQL Schema SQL string
+   */
+  getSqlSchemaText() {
+    return `-- ============================================================================
+-- SBYIM NOC PORTAL - SUPABASE / POSTGRESQL DATABASE SCHEMA
+-- ============================================================================
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- 1. TABLE: noc_records (Main NOC Certificate & Permit Registry)
+CREATE TABLE IF NOT EXISTS public.noc_records (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    noc_number VARCHAR(100) UNIQUE NOT NULL,
+    noc_type VARCHAR(100) NOT NULL DEFAULT 'Activity',
+    client VARCHAR(255) NOT NULL,
+    issued_to VARCHAR(255) NOT NULL,
+    date_of_issuance DATE NOT NULL,
+    date_of_expiration DATE NOT NULL,
+    description TEXT,
+    documents JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- Performance Indexes
+CREATE INDEX IF NOT EXISTS idx_noc_records_noc_number ON public.noc_records (noc_number);
+CREATE INDEX IF NOT EXISTS idx_noc_records_noc_type ON public.noc_records (noc_type);
+CREATE INDEX IF NOT EXISTS idx_noc_records_client ON public.noc_records (client);
+CREATE INDEX IF NOT EXISTS idx_noc_records_issued_to ON public.noc_records (issued_to);
+CREATE INDEX IF NOT EXISTS idx_noc_records_date_issuance ON public.noc_records (date_of_issuance DESC);
+CREATE INDEX IF NOT EXISTS idx_noc_records_date_expiration ON public.noc_records (date_of_expiration ASC);
+CREATE INDEX IF NOT EXISTS idx_noc_records_created_at ON public.noc_records (created_at DESC);
+
+-- 2. TABLE: noc_requirements_docs (Official Guidelines & Compliance Files)
+CREATE TABLE IF NOT EXISTS public.noc_requirements_docs (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(100) NOT NULL,
+    size BIGINT NOT NULL DEFAULT 0,
+    data_url TEXT NOT NULL,
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    uploaded_by VARCHAR(255) NOT NULL DEFAULT 'System Administrator'
+);
+
+CREATE INDEX IF NOT EXISTS idx_noc_req_docs_uploaded_at ON public.noc_requirements_docs (uploaded_at DESC);
+
+-- 3. TABLE: noc_custom_types (Dynamic NOC Categories)
+CREATE TABLE IF NOT EXISTS public.noc_custom_types (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 4. AUTOMATIC TIMESTAMP TRIGGER
+CREATE OR REPLACE FUNCTION public.handle_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = timezone('utc'::text, now());
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_noc_records_updated_at ON public.noc_records;
+CREATE TRIGGER trg_noc_records_updated_at
+    BEFORE UPDATE ON public.noc_records
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_updated_at();
+
+-- 5. ROW LEVEL SECURITY (RLS) POLICIES
+ALTER TABLE public.noc_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.noc_requirements_docs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.noc_custom_types ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow all operations on noc_records" ON public.noc_records;
+CREATE POLICY "Allow all operations on noc_records" ON public.noc_records FOR ALL TO public USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all operations on noc_requirements_docs" ON public.noc_requirements_docs;
+CREATE POLICY "Allow all operations on noc_requirements_docs" ON public.noc_requirements_docs FOR ALL TO public USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all operations on noc_custom_types" ON public.noc_custom_types;
+CREATE POLICY "Allow all operations on noc_custom_types" ON public.noc_custom_types FOR ALL TO public USING (true) WITH CHECK (true);
+
+-- 6. DEFAULT CATEGORIES
+INSERT INTO public.noc_custom_types (name) VALUES ('Activity'), ('Activity NOC') ON CONFLICT (name) DO NOTHING;`;
+  }
+
+  /**
+   * Render top navbar database status badge and inside modal status card
+   */
+  renderDatabaseStatus() {
+    const isConfigured = window.supabaseManager && window.supabaseManager.isConfigured();
+    const isConnected = window.supabaseManager && window.supabaseManager.isConnected;
+
+    const dotEl = document.getElementById('dbStatusDot');
+    const textEl = document.getElementById('dbStatusText');
+    const iconEl = document.getElementById('dbStatusIcon');
+    const headEl = document.getElementById('dbStatusHeading');
+    const pillEl = document.getElementById('dbStatusPill');
+    const msgEl = document.getElementById('dbStatusMessage');
+
+    if (isConnected) {
+      if (dotEl) {
+        dotEl.className = 'db-status-dot connected';
+      }
+      if (textEl) textEl.textContent = 'Supabase: Connected';
+
+      if (iconEl) iconEl.textContent = '🟢';
+      if (headEl) headEl.textContent = 'Connected to Supabase PostgreSQL';
+      if (pillEl) {
+        pillEl.textContent = 'Cloud PostgreSQL';
+        pillEl.style.background = '#DCFCE7';
+        pillEl.style.color = '#15803D';
+      }
+      if (msgEl) {
+        const url = window.supabaseManager.getUrl();
+        msgEl.textContent = `Active connection established to: ${url}. All operations are syncing in real-time.`;
+      }
+    } else if (isConfigured) {
+      if (dotEl) {
+        dotEl.className = 'db-status-dot disconnected';
+      }
+      if (textEl) textEl.textContent = 'Supabase: Connecting...';
+
+      if (iconEl) iconEl.textContent = '🟡';
+      if (headEl) headEl.textContent = 'Connecting to Supabase...';
+      if (pillEl) {
+        pillEl.textContent = 'Connecting';
+        pillEl.style.background = '#FEF3C7';
+        pillEl.style.color = '#B45309';
+      }
+      if (msgEl) {
+        msgEl.textContent = 'Credentials configured. Testing connection with Supabase backend.';
+      }
+    } else {
+      if (dotEl) {
+        dotEl.className = 'db-status-dot';
+      }
+      if (textEl) textEl.textContent = 'Database: Local';
+
+      if (iconEl) iconEl.textContent = '🟡';
+      if (headEl) headEl.textContent = 'Local Persistent Storage Mode';
+      if (pillEl) {
+        pillEl.textContent = 'Offline / Local';
+        pillEl.style.background = '#FEF3C7';
+        pillEl.style.color = '#B45309';
+      }
+      if (msgEl) {
+        msgEl.textContent = "Data is stored securely in your browser's IndexedDB and localStorage. Connect Supabase to enable cloud sync and PostgreSQL persistence.";
+      }
+    }
+  }
+
+  /**
+   * Open the Supabase Database Configuration Modal
+   */
+  openDatabaseModal() {
+    const modal = document.getElementById('databaseModal');
+    const urlInput = document.getElementById('inputSupabaseUrl');
+    const keyInput = document.getElementById('inputSupabaseKey');
+    const codeBlock = document.getElementById('sqlSchemaCodeBlock');
+    const credentialsSection = document.getElementById('supabaseCredentialsSection');
+    const syncSection = document.getElementById('supabaseSyncSection');
+    const schemaSection = document.getElementById('supabaseSchemaSection');
+    const isAdmin = window.nocAuth && window.nocAuth.isAdmin();
+
+    if (credentialsSection) {
+      credentialsSection.style.display = isAdmin ? 'block' : 'none';
+    }
+    if (syncSection) {
+      syncSection.style.display = isAdmin ? 'block' : 'none';
+    }
+    if (schemaSection) {
+      schemaSection.style.display = isAdmin ? 'block' : 'none';
+    }
+
+    if (urlInput && window.supabaseManager) {
+      urlInput.value = isAdmin ? (window.supabaseManager.getUrl() || '') : '';
+    }
+    if (keyInput && window.supabaseManager) {
+      keyInput.value = isAdmin ? (window.supabaseManager.getAnonKey() || '') : '';
+    }
+    if (codeBlock) {
+      codeBlock.textContent = isAdmin ? this.getSqlSchemaText() : '';
+    }
+
+    this.renderDatabaseStatus();
+    if (modal) modal.classList.add('active');
+  }
+
+  /**
+   * Close the Supabase Database Configuration Modal
+   */
+  closeDatabaseModal() {
+    const modal = document.getElementById('databaseModal');
     if (modal) modal.classList.remove('active');
   }
 }

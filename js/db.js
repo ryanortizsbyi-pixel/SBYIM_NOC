@@ -1,29 +1,35 @@
 /**
- * NOC Portal - IndexedDB Storage Engine
- * Handles persistent client-side database storage for NOC records and document binaries.
+ * NOC Portal - Unified Supabase / PostgreSQL Database Storage Engine
+ * Handles PostgreSQL queries via Supabase JS SDK with resilient local offline fallback.
  */
 
-const DB_NAME = 'NOC_Portal_DB';
-const DB_VERSION = 1;
-const STORE_NAME = 'noc_records';
+const LOCAL_DB_NAME = 'NOC_Portal_DB';
+const LOCAL_DB_VERSION = 1;
+const LOCAL_STORE_NAME = 'noc_records';
 
 class NOCDatabase {
   constructor() {
-    this.db = null;
+    this.localDb = null;
     this.initPromise = this.init();
   }
 
   /**
-   * Initializes the IndexedDB instance and creates necessary object stores and indexes.
+   * Initialize local IndexedDB engine for offline / fallback storage
    */
-  async init() {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+  async initLocalDB() {
+    return new Promise((resolve) => {
+      if (!window.indexedDB) {
+        console.warn('IndexedDB not supported by browser.');
+        resolve(null);
+        return;
+      }
+
+      const request = indexedDB.open(LOCAL_DB_NAME, LOCAL_DB_VERSION);
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(LOCAL_STORE_NAME)) {
+          const store = db.createObjectStore(LOCAL_STORE_NAME, { keyPath: 'id' });
           store.createIndex('nocNumber', 'nocNumber', { unique: true });
           store.createIndex('nocType', 'nocType', { unique: false });
           store.createIndex('client', 'client', { unique: false });
@@ -34,85 +40,223 @@ class NOCDatabase {
       };
 
       request.onsuccess = (event) => {
-        this.db = event.target.result;
-        resolve(this.db);
+        this.localDb = event.target.result;
+        resolve(this.localDb);
       };
 
       request.onerror = (event) => {
         console.error('IndexedDB open error:', event.target.error);
-        reject(event.target.error);
+        resolve(null);
       };
     });
   }
 
   /**
-   * Ensure database connection is ready before executing queries.
+   * Main database initialization
    */
-  async getDB() {
-    if (!this.db) {
-      await this.initPromise;
+  async init() {
+    await this.initLocalDB();
+
+    // Check if Supabase client is configured and test connection
+    if (window.supabaseManager && window.supabaseManager.isConfigured()) {
+      try {
+        const status = await window.supabaseManager.testConnection();
+        if (status.success) {
+          console.log('NOCDatabase: Connected to Supabase PostgreSQL database.');
+        } else {
+          console.warn('NOCDatabase: Supabase credentials found but connection test failed. Using local storage.', status.message);
+        }
+      } catch (e) {
+        console.warn('NOCDatabase: Supabase test connection error:', e);
+      }
+    } else {
+      console.log('NOCDatabase: Supabase not configured yet. Operating in Local Persistent mode.');
     }
-    return this.db;
   }
+
+  /**
+   * Check if active mode is Supabase PostgreSQL
+   */
+  isSupabaseActive() {
+    return Boolean(
+      window.supabaseManager && 
+      window.supabaseManager.isConfigured() && 
+      window.supabaseManager.getClient()
+    );
+  }
+
+  /**
+   * Get active Supabase client instance
+   */
+  getSupabaseClient() {
+    return window.supabaseManager ? window.supabaseManager.getClient() : null;
+  }
+
+  // ==========================================================================
+  // SCHEMA DATA MAPPERS (PostgreSQL snake_case <-> JavaScript UI camelCase)
+  // ==========================================================================
+
+  /**
+   * Converts frontend NOC record to PostgreSQL database row
+   */
+  mapRecordToDb(rec) {
+    if (!rec) return null;
+    return {
+      id: rec.id || 'noc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+      noc_number: (rec.nocNumber || '').trim(),
+      noc_type: rec.nocType || 'Activity',
+      client: (rec.client || '').trim(),
+      issued_to: (rec.issuedTo || '').trim(),
+      date_of_issuance: rec.dateOfIssuance,
+      date_of_expiration: rec.dateOfExpiration,
+      description: rec.description || '',
+      documents: Array.isArray(rec.documents) ? rec.documents : [],
+      created_at: rec.createdAt || new Date().toISOString(),
+      updated_at: rec.updatedAt || new Date().toISOString()
+    };
+  }
+
+  /**
+   * Converts PostgreSQL database row to frontend NOC record
+   */
+  mapDbToRecord(row) {
+    if (!row) return null;
+    let docs = [];
+    if (Array.isArray(row.documents)) {
+      docs = row.documents;
+    } else if (typeof row.documents === 'string') {
+      try {
+        docs = JSON.parse(row.documents || '[]');
+      } catch (e) {
+        docs = [];
+      }
+    }
+
+    return {
+      id: String(row.id),
+      nocNumber: row.noc_number || row.nocNumber,
+      nocType: row.noc_type || row.nocType || 'Activity',
+      client: row.client || '',
+      issuedTo: row.issued_to || row.issuedTo || '',
+      dateOfIssuance: row.date_of_issuance || row.dateOfIssuance,
+      dateOfExpiration: row.date_of_expiration || row.dateOfExpiration,
+      description: row.description || '',
+      documents: docs,
+      createdAt: row.created_at || row.createdAt,
+      updatedAt: row.updated_at || row.updatedAt
+    };
+  }
+
+  /**
+   * Maps Requirements Doc frontend model to PostgreSQL row
+   */
+  mapReqDocToDb(doc) {
+    return {
+      id: doc.id || 'req_doc_' + Date.now(),
+      name: doc.name || 'Untitled Document',
+      type: doc.type || 'application/pdf',
+      size: Number(doc.size || 0),
+      data_url: doc.dataUrl || doc.data_url || '',
+      uploaded_at: doc.uploadedAt || doc.uploaded_at || new Date().toISOString(),
+      uploaded_by: doc.uploadedBy || doc.uploaded_by || 'System Administrator'
+    };
+  }
+
+  /**
+   * Maps PostgreSQL row to frontend Requirements Doc model
+   */
+  mapDbToReqDoc(row) {
+    return {
+      id: String(row.id),
+      name: row.name,
+      type: row.type,
+      size: Number(row.size || 0),
+      dataUrl: row.data_url || row.dataUrl,
+      uploadedAt: row.uploaded_at || row.uploadedAt,
+      uploadedBy: row.uploaded_by || row.uploadedBy || 'System Administrator'
+    };
+  }
+
+  // ==========================================================================
+  // CORE NOC RECORD OPERATIONS
+  // ==========================================================================
 
   /**
    * Retrieve all NOC records.
    */
   async getAll() {
-    const db = await this.getDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.getAll();
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { data, error } = await client
+          .from('noc_records')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-      request.onsuccess = () => {
-        const records = request.result || [];
-        // Sort descending by dateOfIssuance or createdAt
-        records.sort((a, b) => new Date(b.createdAt || b.dateOfIssuance) - new Date(a.createdAt || a.dateOfIssuance));
-        resolve(records);
-      };
+        if (error) throw error;
+        return (data || []).map(row => this.mapDbToRecord(row));
+      } catch (err) {
+        console.warn('Supabase getAll failed, falling back to local DB:', err.message);
+      }
+    }
 
-      request.onerror = () => reject(request.error);
-    });
+    // Local IndexedDB Fallback
+    return this._localGetAll();
   }
 
   /**
-   * Retrieve a single NOC record by its unique ID.
+   * Retrieve a single NOC record by ID.
    */
   async getById(id) {
-    const db = await this.getDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.get(id);
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { data, error } = await client
+          .from('noc_records')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
 
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+        if (error) throw error;
+        if (data) return this.mapDbToRecord(data);
+      } catch (err) {
+        console.warn('Supabase getById failed, falling back to local DB:', err.message);
+      }
+    }
+
+    return this._localGetById(id);
   }
 
   /**
    * Find an NOC record by its NOC Number.
    */
   async getByNocNumber(nocNumber) {
-    const db = await this.getDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const index = store.index('nocNumber');
-      const request = index.get(nocNumber);
+    if (!nocNumber) return null;
+    const cleanNum = nocNumber.trim();
 
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { data, error } = await client
+          .from('noc_records')
+          .select('*')
+          .ilike('noc_number', cleanNum)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (data) return this.mapDbToRecord(data);
+      } catch (err) {
+        console.warn('Supabase getByNocNumber failed, checking local DB:', err.message);
+      }
+    }
+
+    return this._localGetByNocNumber(cleanNum);
   }
 
   /**
    * Add a new NOC record into the database.
    */
   async add(record) {
-    const db = await this.getDB();
-    
     // Check for duplicate NOC Number
     const existing = await this.getByNocNumber(record.nocNumber);
     if (existing) {
@@ -127,98 +271,373 @@ class NOCDatabase {
       documents: record.documents || []
     };
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.add(newRecord);
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const dbPayload = this.mapRecordToDb(newRecord);
+        const { data, error } = await client
+          .from('noc_records')
+          .insert(dbPayload)
+          .select()
+          .single();
 
-      request.onsuccess = () => resolve(newRecord);
-      request.onerror = () => reject(request.error);
-    });
+        if (error) throw error;
+        
+        // Also cache locally for offline continuity
+        await this._localPut(newRecord).catch(() => {});
+        return this.mapDbToRecord(data);
+      } catch (err) {
+        console.warn('Supabase add failed, storing in local DB:', err.message);
+        throw new Error(`Failed to save to Supabase: ${err.message}`);
+      }
+    }
+
+    // Local IndexedDB
+    await this._localAdd(newRecord);
+    return newRecord;
   }
 
   /**
    * Update an existing NOC record.
    */
   async update(id, updatedFields) {
-    const db = await this.getDB();
     const existing = await this.getById(id);
     if (!existing) {
       throw new Error(`Record with ID ${id} not found.`);
     }
 
     // Check if new NOC Number conflicts with another record
-    if (updatedFields.nocNumber && updatedFields.nocNumber !== existing.nocNumber) {
+    if (updatedFields.nocNumber && updatedFields.nocNumber.trim() !== existing.nocNumber.trim()) {
       const duplicate = await this.getByNocNumber(updatedFields.nocNumber);
       if (duplicate && duplicate.id !== id) {
         throw new Error(`NOC Number "${updatedFields.nocNumber}" is already in use by another record.`);
       }
     }
 
-    const updatedRecord = {
+    const mergedRecord = {
       ...existing,
       ...updatedFields,
-      id: id, // preserve key
+      id: id,
       updatedAt: new Date().toISOString()
     };
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.put(updatedRecord);
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const dbPayload = this.mapRecordToDb(mergedRecord);
+        const { data, error } = await client
+          .from('noc_records')
+          .update(dbPayload)
+          .eq('id', id)
+          .select()
+          .single();
 
-      request.onsuccess = () => resolve(updatedRecord);
-      request.onerror = () => reject(request.error);
-    });
+        if (error) throw error;
+
+        // Cache locally
+        await this._localPut(mergedRecord).catch(() => {});
+        return this.mapDbToRecord(data);
+      } catch (err) {
+        console.warn('Supabase update failed:', err.message);
+        throw new Error(`Failed to update in Supabase: ${err.message}`);
+      }
+    }
+
+    // Local IndexedDB
+    await this._localPut(mergedRecord);
+    return mergedRecord;
   }
 
   /**
    * Delete an NOC record.
    */
   async delete(id) {
-    const db = await this.getDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.delete(id);
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { error } = await client
+          .from('noc_records')
+          .delete()
+          .eq('id', id);
 
-      request.onsuccess = () => resolve(true);
-      request.onerror = () => reject(request.error);
-    });
+        if (error) throw error;
+        
+        // Also remove from local store
+        await this._localDelete(id).catch(() => {});
+        return true;
+      } catch (err) {
+        console.warn('Supabase delete failed:', err.message);
+        throw new Error(`Failed to delete in Supabase: ${err.message}`);
+      }
+    }
+
+    return this._localDelete(id);
   }
 
   /**
-   * Bulk insert records (used for seeding initial demo data).
+   * Bulk insert/upsert records.
    */
   async bulkInsert(records) {
-    const db = await this.getDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
+    if (!records || records.length === 0) return true;
 
-      records.forEach((record) => {
-        store.put(record);
-      });
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const dbRows = records.map(r => this.mapRecordToDb(r));
+        const { error } = await client
+          .from('noc_records')
+          .upsert(dbRows, { onConflict: 'id' });
 
-      transaction.oncomplete = () => resolve(true);
-      transaction.onerror = () => reject(transaction.error);
-    });
+        if (error) throw error;
+      } catch (err) {
+        console.warn('Supabase bulkInsert failed, writing locally:', err.message);
+      }
+    }
+
+    // Save locally
+    return this._localBulkInsert(records);
   }
 
   /**
    * Clear all records in the database.
    */
   async clearAll() {
-    const db = await this.getDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.clear();
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { error } = await client
+          .from('noc_records')
+          .delete()
+          .neq('id', '___none___');
 
-      request.onsuccess = () => resolve(true);
-      request.onerror = () => reject(request.error);
-    });
+        if (error) throw error;
+      } catch (err) {
+        console.warn('Supabase clearAll failed:', err.message);
+      }
+    }
+
+    return this._localClearAll();
   }
+
+  // ==========================================================================
+  // NOC REQUIREMENTS DOCUMENTS (Max 5 Documents)
+  // ==========================================================================
+
+  /**
+   * Get all stored NOC Requirements Documents
+   */
+  async getRequirementsDocs() {
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { data, error } = await client
+          .from('noc_requirements_docs')
+          .select('*')
+          .order('uploaded_at', { ascending: false })
+          .limit(5);
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          return data.map(row => this.mapDbToReqDoc(row));
+        }
+      } catch (err) {
+        console.warn('Supabase getRequirementsDocs failed, reading local:', err.message);
+      }
+    }
+
+    // Fallback to localStorage or default seed
+    try {
+      const stored = localStorage.getItem('noc_requirements_documents_v2');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.warn('Could not read requirements from localStorage', e);
+    }
+    return window.DEFAULT_NOC_REQUIREMENTS_DOCS || [];
+  }
+
+  /**
+   * Save NOC Requirements Documents list (Enforcing 5 maximum)
+   */
+  async saveRequirementsDocs(docs) {
+    const clamped = (docs || []).slice(0, 5);
+
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const dbRows = clamped.map(d => this.mapReqDocToDb(d));
+        
+        // Clear old and insert new
+        await client.from('noc_requirements_docs').delete().neq('id', '___none___');
+        if (dbRows.length > 0) {
+          const { error } = await client.from('noc_requirements_docs').insert(dbRows);
+          if (error) throw error;
+        }
+      } catch (err) {
+        console.warn('Supabase saveRequirementsDocs failed, saving locally:', err.message);
+      }
+    }
+
+    try {
+      localStorage.setItem('noc_requirements_documents_v2', JSON.stringify(clamped));
+    } catch (e) {
+      console.warn('Could not write requirements to localStorage', e);
+    }
+    return clamped;
+  }
+
+  /**
+   * Delete a single requirements document by ID
+   */
+  async deleteRequirementsDoc(id) {
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        await client.from('noc_requirements_docs').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Supabase deleteRequirementsDoc failed:', err.message);
+      }
+    }
+
+    const docs = await this.getRequirementsDocs();
+    const filtered = docs.filter(d => d.id !== id);
+    return await this.saveRequirementsDocs(filtered);
+  }
+
+  // ==========================================================================
+  // CUSTOM NOC TYPES (Supabase & Local)
+  // ==========================================================================
+
+  /**
+   * Get all custom NOC types
+   */
+  async getCustomTypes() {
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { data, error } = await client
+          .from('noc_custom_types')
+          .select('name')
+          .order('name', { ascending: true });
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          return data.map(r => r.name);
+        }
+      } catch (err) {
+        console.warn('Supabase getCustomTypes failed, reading local:', err.message);
+      }
+    }
+
+    try {
+      const stored = localStorage.getItem('noc_custom_types');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.warn('Could not read custom types from localStorage', e);
+    }
+    return [];
+  }
+
+  /**
+   * Save a new custom NOC type
+   */
+  async saveCustomType(typeName) {
+    if (!typeName) return;
+    const trimmed = String(typeName).trim();
+    if (!trimmed) return;
+
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        await client
+          .from('noc_custom_types')
+          .insert({ name: trimmed })
+          .select();
+      } catch (err) {
+        // Ignore duplicate error in Supabase
+        console.log('Supabase custom type insert note:', err.message);
+      }
+    }
+
+    // Save in local storage
+    try {
+      let customTypes = await this.getCustomTypes();
+      if (!customTypes.some(t => t.toLowerCase() === trimmed.toLowerCase())) {
+        customTypes.push(trimmed);
+        localStorage.setItem('noc_custom_types', JSON.stringify(customTypes));
+      }
+    } catch (e) {
+      console.warn('Could not save custom type to localStorage', e);
+    }
+  }
+
+  // ==========================================================================
+  // 1-CLICK LOCAL TO SUPABASE SYNCHRONIZATION
+  // ==========================================================================
+
+  /**
+   * Push all current local data (NOC records, Requirements, Types) directly to Supabase
+   */
+  async syncLocalToSupabase() {
+    if (!this.isSupabaseActive()) {
+      throw new Error('Supabase client is not connected. Please configure your Project URL & Anon Key first.');
+    }
+
+    const client = this.getSupabaseClient();
+    const localRecords = await this._localGetAll();
+    const localReqDocs = await this.getRequirementsDocs();
+    const localTypes = await this.getCustomTypes();
+
+    const stats = {
+      recordsSynced: 0,
+      reqDocsSynced: 0,
+      typesSynced: 0
+    };
+
+    // 1. Sync NOC Records
+    if (localRecords && localRecords.length > 0) {
+      const dbRows = localRecords.map(r => this.mapRecordToDb(r));
+      const { error: recError } = await client
+        .from('noc_records')
+        .upsert(dbRows, { onConflict: 'id' });
+
+      if (recError) throw new Error(`Failed syncing NOC records: ${recError.message}`);
+      stats.recordsSynced = dbRows.length;
+    }
+
+    // 2. Sync Requirement Documents
+    if (localReqDocs && localReqDocs.length > 0) {
+      const reqRows = localReqDocs.map(d => this.mapReqDocToDb(d));
+      const { error: docError } = await client
+        .from('noc_requirements_docs')
+        .upsert(reqRows, { onConflict: 'id' });
+
+      if (docError) throw new Error(`Failed syncing requirements documents: ${docError.message}`);
+      stats.reqDocsSynced = reqRows.length;
+    }
+
+    // 3. Sync Custom Types
+    if (localTypes && localTypes.length > 0) {
+      const typeRows = localTypes.map(t => ({ name: t }));
+      const { error: typeError } = await client
+        .from('noc_custom_types')
+        .upsert(typeRows, { onConflict: 'name' });
+
+      if (!typeError) {
+        stats.typesSynced = typeRows.length;
+      }
+    }
+
+    return stats;
+  }
+
+  // ==========================================================================
+  // UTILITIES & SUMMARY STATS
+  // ==========================================================================
 
   /**
    * Compute NOC status based on expiration date.
@@ -295,42 +714,128 @@ class NOCDatabase {
     }
   }
 
-  /**
-   * Get all stored NOC Requirements Documents (Up to 5)
-   */
-  async getRequirementsDocs() {
-    try {
-      const stored = localStorage.getItem('noc_requirements_documents_v2');
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (e) {
-      console.warn('Could not read requirements from storage', e);
+  // ==========================================================================
+  // INTERNAL LOCAL INDEXEDDB DRIVER IMPLEMENTATION
+  // ==========================================================================
+
+  async _getLocalDB() {
+    if (!this.localDb) {
+      await this.initPromise;
     }
-    return window.DEFAULT_NOC_REQUIREMENTS_DOCS || [];
+    return this.localDb;
   }
 
-  /**
-   * Save NOC Requirements Documents list (Enforcing 5 maximum)
-   */
-  async saveRequirementsDocs(docs) {
-    try {
-      const clamped = (docs || []).slice(0, 5);
-      localStorage.setItem('noc_requirements_documents_v2', JSON.stringify(clamped));
-      return clamped;
-    } catch (e) {
-      console.error('Failed to save requirements documents:', e);
-      throw e;
-    }
+  async _localGetAll() {
+    const db = await this._getLocalDB();
+    if (!db) return [];
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([LOCAL_STORE_NAME], 'readonly');
+      const store = transaction.objectStore(LOCAL_STORE_NAME);
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const records = request.result || [];
+        records.sort((a, b) => new Date(b.createdAt || b.dateOfIssuance) - new Date(a.createdAt || a.dateOfIssuance));
+        resolve(records);
+      };
+
+      request.onerror = () => reject(request.error);
+    });
   }
 
-  /**
-   * Delete a single requirements document by ID
-   */
-  async deleteRequirementsDoc(id) {
-    const docs = await this.getRequirementsDocs();
-    const filtered = docs.filter(d => d.id !== id);
-    return await this.saveRequirementsDocs(filtered);
+  async _localGetById(id) {
+    const db = await this._getLocalDB();
+    if (!db) return null;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([LOCAL_STORE_NAME], 'readonly');
+      const store = transaction.objectStore(LOCAL_STORE_NAME);
+      const request = store.get(id);
+
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async _localGetByNocNumber(nocNumber) {
+    const db = await this._getLocalDB();
+    if (!db) return null;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([LOCAL_STORE_NAME], 'readonly');
+      const store = transaction.objectStore(LOCAL_STORE_NAME);
+      const index = store.index('nocNumber');
+      const request = index.get(nocNumber);
+
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async _localAdd(record) {
+    const db = await this._getLocalDB();
+    if (!db) return record;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([LOCAL_STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(LOCAL_STORE_NAME);
+      const request = store.add(record);
+
+      request.onsuccess = () => resolve(record);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async _localPut(record) {
+    const db = await this._getLocalDB();
+    if (!db) return record;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([LOCAL_STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(LOCAL_STORE_NAME);
+      const request = store.put(record);
+
+      request.onsuccess = () => resolve(record);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async _localDelete(id) {
+    const db = await this._getLocalDB();
+    if (!db) return true;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([LOCAL_STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(LOCAL_STORE_NAME);
+      const request = store.delete(id);
+
+      request.onsuccess = () => resolve(true);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async _localBulkInsert(records) {
+    const db = await this._getLocalDB();
+    if (!db) return true;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([LOCAL_STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(LOCAL_STORE_NAME);
+
+      records.forEach((record) => {
+        store.put(record);
+      });
+
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  async _localClearAll() {
+    const db = await this._getLocalDB();
+    if (!db) return true;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([LOCAL_STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(LOCAL_STORE_NAME);
+      const request = store.clear();
+
+      request.onsuccess = () => resolve(true);
+      request.onerror = () => reject(request.error);
+    });
   }
 }
 

@@ -92,26 +92,17 @@ class NOCApp {
   }
 
   /**
-   * Persist a new custom NOC type into localStorage
+   * Persist a new custom NOC type into database / localStorage
    */
-  saveCustomNocType(newType) {
+  async saveCustomNocType(newType) {
     if (!newType) return;
     const trimmed = String(newType).trim();
     if (!trimmed) return;
 
     try {
-      let customTypes = [];
-      const stored = localStorage.getItem('noc_custom_types');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) customTypes = parsed;
-      }
-      if (!customTypes.some(t => t.toLowerCase() === trimmed.toLowerCase())) {
-        customTypes.push(trimmed);
-        localStorage.setItem('noc_custom_types', JSON.stringify(customTypes));
-      }
+      await window.nocDB.saveCustomType(trimmed);
     } catch (e) {
-      console.warn('Could not save custom type to localStorage', e);
+      console.warn('Could not save custom type:', e);
     }
   }
 
@@ -636,6 +627,166 @@ class NOCApp {
           await window.nocDB.bulkInsert(window.INITIAL_NOC_SEED_DATA);
           window.showToast('Database reset to original demo records.', 'success');
           await this.refreshData();
+        }
+      });
+    }
+
+    // ========================================================================
+    // Supabase / PostgreSQL Database Modal Events
+    // ========================================================================
+    const btnDatabaseConfig = document.getElementById('btnDatabaseConfig');
+    const btnCloseDatabaseModal = document.getElementById('btnCloseDatabaseModal');
+    const btnCloseDatabaseModalFooter = document.getElementById('btnCloseDatabaseModalFooter');
+    const btnSaveSupabaseConfig = document.getElementById('btnSaveSupabaseConfig');
+    const btnTestSupabaseConnection = document.getElementById('btnTestSupabaseConnection');
+    const btnClearSupabaseConfig = document.getElementById('btnClearSupabaseConfig');
+    const btnSyncToSupabase = document.getElementById('btnSyncToSupabase');
+    const btnCopySqlSchema = document.getElementById('btnCopySqlSchema');
+
+    if (btnDatabaseConfig) {
+      btnDatabaseConfig.addEventListener('click', () => {
+        window.nocUI.openDatabaseModal();
+      });
+    }
+
+    if (btnCloseDatabaseModal) {
+      btnCloseDatabaseModal.addEventListener('click', () => {
+        window.nocUI.closeDatabaseModal();
+      });
+    }
+
+    if (btnCloseDatabaseModalFooter) {
+      btnCloseDatabaseModalFooter.addEventListener('click', () => {
+        window.nocUI.closeDatabaseModal();
+      });
+    }
+
+    // Save Supabase Project Credentials & Connect
+    if (btnSaveSupabaseConfig) {
+      btnSaveSupabaseConfig.addEventListener('click', async () => {
+        const url = (document.getElementById('inputSupabaseUrl')?.value || '').trim();
+        const key = (document.getElementById('inputSupabaseKey')?.value || '').trim();
+
+        if (!url || !key) {
+          window.showToast('Please enter both Supabase URL and Anon Key.', 'error');
+          return;
+        }
+
+        btnSaveSupabaseConfig.disabled = true;
+        btnSaveSupabaseConfig.textContent = 'Connecting...';
+
+        try {
+          window.supabaseManager.saveCredentials(url, key);
+          const result = await window.supabaseManager.testConnection();
+
+          if (result.success) {
+            window.showToast('Connected to Supabase PostgreSQL database!', 'success');
+            await this.refreshData();
+          } else {
+            window.showToast(result.message || 'Connection failed.', 'error');
+          }
+        } catch (err) {
+          window.showToast('Error saving credentials: ' + err.message, 'error');
+        } finally {
+          btnSaveSupabaseConfig.disabled = false;
+          btnSaveSupabaseConfig.textContent = '💾 Save & Connect';
+          window.nocUI.renderDatabaseStatus();
+        }
+      });
+    }
+
+    // Test Supabase Connection
+    if (btnTestSupabaseConnection) {
+      btnTestSupabaseConnection.addEventListener('click', async () => {
+        const url = (document.getElementById('inputSupabaseUrl')?.value || '').trim();
+        const key = (document.getElementById('inputSupabaseKey')?.value || '').trim();
+
+        if (url && key) {
+          window.supabaseManager.saveCredentials(url, key);
+        }
+
+        btnTestSupabaseConnection.disabled = true;
+        btnTestSupabaseConnection.textContent = 'Testing...';
+
+        try {
+          const result = await window.supabaseManager.testConnection();
+          if (result.success) {
+            window.showToast('Supabase PostgreSQL connection successful! ⚡', 'success');
+          } else {
+            window.showToast(result.message || 'Connection test failed.', 'error');
+          }
+        } catch (err) {
+          window.showToast('Connection test error: ' + err.message, 'error');
+        } finally {
+          btnTestSupabaseConnection.disabled = false;
+          btnTestSupabaseConnection.textContent = '🔌 Test Connection';
+          window.nocUI.renderDatabaseStatus();
+        }
+      });
+    }
+
+    // Clear Credentials & Disconnect
+    if (btnClearSupabaseConfig) {
+      btnClearSupabaseConfig.addEventListener('click', async () => {
+        if (confirm('Disconnect Supabase and switch back to Local Persistent Storage?')) {
+          window.supabaseManager.clearCredentials();
+          const urlInput = document.getElementById('inputSupabaseUrl');
+          const keyInput = document.getElementById('inputSupabaseKey');
+          if (urlInput) urlInput.value = '';
+          if (keyInput) keyInput.value = '';
+          window.showToast('Reverted to Local Storage mode.', 'info');
+          window.nocUI.renderDatabaseStatus();
+          await this.refreshData();
+        }
+      });
+    }
+
+    // 1-Click Sync Local Records to Supabase
+    if (btnSyncToSupabase) {
+      btnSyncToSupabase.addEventListener('click', async () => {
+        if (!window.supabaseManager || !window.supabaseManager.isConfigured()) {
+          window.showToast('Please configure and connect your Supabase database first.', 'error');
+          return;
+        }
+
+        btnSyncToSupabase.disabled = true;
+        btnSyncToSupabase.textContent = 'Syncing...';
+
+        try {
+          const stats = await window.nocDB.syncLocalToSupabase();
+          window.showToast(`Sync successful! ${stats.recordsSynced} records, ${stats.reqDocsSynced} guidelines pushed to Supabase.`, 'success');
+          await this.refreshData();
+        } catch (err) {
+          window.showToast('Sync failed: ' + err.message, 'error');
+        } finally {
+          btnSyncToSupabase.disabled = false;
+          btnSyncToSupabase.textContent = '⬆️ Sync to Supabase';
+        }
+      });
+    }
+
+    // Copy SQL Schema
+    if (btnCopySqlSchema) {
+      btnCopySqlSchema.addEventListener('click', async () => {
+        try {
+          const sqlText = window.nocUI.getSqlSchemaText();
+          await navigator.clipboard.writeText(sqlText);
+          window.showToast('PostgreSQL SQL Schema copied to clipboard!', 'success');
+        } catch (err) {
+          // Fallback if clipboard API is restricted
+          const codeBlock = document.getElementById('sqlSchemaCodeBlock');
+          if (codeBlock) {
+            const range = document.createRange();
+            range.selectNodeContents(codeBlock);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            document.execCommand('copy');
+            selection.removeAllRanges();
+            window.showToast('SQL Schema copied to clipboard!', 'success');
+          } else {
+            window.showToast('Could not copy automatically. Please select text manually.', 'error');
+          }
         }
       });
     }
