@@ -156,6 +156,14 @@ class AuthManager {
     );
   }
 
+  canExportJSON() {
+    return Boolean(
+      this.currentUser &&
+      this.currentUser.username &&
+      this.currentUser.username.toLowerCase() === 'admin'
+    );
+  }
+
   /**
    * Capability permission checks
    */

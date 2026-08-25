@@ -1109,8 +1109,8 @@ class NOCApp {
    * Export raw JSON database backup
    */
   async exportJSON() {
-    if (!window.nocAuth.isAdmin()) {
-      window.showToast('Admin access required to download database backup.', 'error');
+    if (!window.nocAuth || !window.nocAuth.canExportJSON()) {
+      window.showToast('System Administrator access required to download database backup.', 'error');
       return;
     }
 

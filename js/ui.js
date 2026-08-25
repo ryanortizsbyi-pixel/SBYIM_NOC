@@ -167,10 +167,11 @@ class UIManager {
       btnExportCSV.title = isAdmin ? 'Export database to CSV spreadsheet' : '';
     }
 
+    const canExportJson = window.nocAuth && window.nocAuth.canExportJSON();
     if (btnExportJSON) {
-      btnExportJSON.style.display = isAdmin ? 'inline-flex' : 'none';
-      btnExportJSON.disabled = !isAdmin;
-      btnExportJSON.title = isAdmin ? 'Download complete JSON backup' : '';
+      btnExportJSON.style.display = canExportJson ? 'inline-flex' : 'none';
+      btnExportJSON.disabled = !canExportJson;
+      btnExportJSON.title = canExportJson ? 'Download complete JSON backup' : '';
     }
 
     if (statsGrid) {
