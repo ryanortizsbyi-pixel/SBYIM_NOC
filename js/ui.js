@@ -129,9 +129,10 @@ class UIManager {
 
     if (badgeEl) {
       if (window.nocAuth.isLoggedIn()) {
+        const roleLabel = user?.username === 'admin' ? 'Admin' : (user?.username === 'SBYIM' ? 'SBYIM' : (isAdmin ? 'Admin' : 'Guest'));
         badgeEl.innerHTML = `
           <span class="role-dot ${isAdmin ? 'admin' : 'guest'}"></span>
-          <span>${isAdmin ? 'Admin' : 'Guest'}</span>
+          <span>${roleLabel}</span>
           <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.45rem; font-size:0.75rem; margin-left:0.3rem;" id="btnHeaderSwitchRole" title="Switch role or log out">
             Switch
           </button>
@@ -199,6 +200,12 @@ class UIManager {
     const closeLoginBtn = document.getElementById('btnCloseLoginModal');
     if (closeLoginBtn) {
       closeLoginBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+    }
+
+    const btnDatabaseConfig = document.getElementById('btnDatabaseConfig');
+    if (btnDatabaseConfig) {
+      btnDatabaseConfig.style.display = 'inline-flex';
+      btnDatabaseConfig.disabled = false;
     }
   }
 
@@ -1172,10 +1179,16 @@ INSERT INTO public.noc_custom_types (name) VALUES ('Activity'), ('Activity NOC')
         msgEl.textContent = "Data is stored securely in your browser's IndexedDB and localStorage. Connect Supabase to enable cloud sync and PostgreSQL persistence.";
       }
     }
+
+    const btnDatabaseConfig = document.getElementById('btnDatabaseConfig');
+    if (btnDatabaseConfig) {
+      btnDatabaseConfig.style.display = 'inline-flex';
+      btnDatabaseConfig.disabled = false;
+    }
   }
 
   /**
-   * Open the Supabase Database Configuration Modal
+   * Open the Supabase Database Configuration Modal (Accessible to all users)
    */
   openDatabaseModal() {
     const modal = document.getElementById('databaseModal');
@@ -1185,26 +1198,25 @@ INSERT INTO public.noc_custom_types (name) VALUES ('Activity'), ('Activity NOC')
     const credentialsSection = document.getElementById('supabaseCredentialsSection');
     const syncSection = document.getElementById('supabaseSyncSection');
     const schemaSection = document.getElementById('supabaseSchemaSection');
-    const isAdmin = window.nocAuth && window.nocAuth.isAdmin();
 
     if (credentialsSection) {
-      credentialsSection.style.display = isAdmin ? 'block' : 'none';
+      credentialsSection.style.display = 'block';
     }
     if (syncSection) {
-      syncSection.style.display = isAdmin ? 'block' : 'none';
+      syncSection.style.display = 'block';
     }
     if (schemaSection) {
-      schemaSection.style.display = isAdmin ? 'block' : 'none';
+      schemaSection.style.display = 'block';
     }
 
     if (urlInput && window.supabaseManager) {
-      urlInput.value = isAdmin ? (window.supabaseManager.getUrl() || '') : '';
+      urlInput.value = window.supabaseManager.getUrl() || '';
     }
     if (keyInput && window.supabaseManager) {
-      keyInput.value = isAdmin ? (window.supabaseManager.getAnonKey() || '') : '';
+      keyInput.value = window.supabaseManager.getAnonKey() || '';
     }
     if (codeBlock) {
-      codeBlock.textContent = isAdmin ? this.getSqlSchemaText() : '';
+      codeBlock.textContent = this.getSqlSchemaText();
     }
 
     this.renderDatabaseStatus();

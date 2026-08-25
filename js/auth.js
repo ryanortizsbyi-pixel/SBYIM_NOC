@@ -21,6 +21,13 @@ class AuthManager {
         displayName: 'System Administrator',
         email: 'admin@nocportal.gov'
       },
+      sbyim: {
+        username: 'SBYIM',
+        password: 'ManagementNOC',
+        role: 'admin',
+        displayName: 'SBYIM Management',
+        email: 'sbyim@nocportal.gov'
+      },
       guest: {
         username: 'guest',
         password: 'guest123',
@@ -135,6 +142,10 @@ class AuthManager {
 
   isGuest() {
     return this.currentUser && this.currentUser.role === 'guest';
+  }
+
+  canManageDatabase() {
+    return true;
   }
 
   /**
