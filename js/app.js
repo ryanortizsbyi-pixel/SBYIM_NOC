@@ -205,11 +205,15 @@ class NOCApp {
     const isGuest = window.nocAuth.isGuest();
 
     this.filteredRecords = this.allRecords.filter((rec) => {
-      // 1. Search filter: Guest can ONLY search by NOC Number; Admin can search all fields
+      // 1. Search filter: Guest can search by NOC Number, Issued To, and Client; Admin can search all fields
       let matchesSearch = true;
       if (q) {
         if (isGuest) {
-          matchesSearch = rec.nocNumber && rec.nocNumber.toLowerCase().includes(q);
+          matchesSearch = (
+            (rec.nocNumber && rec.nocNumber.toLowerCase().includes(q)) ||
+            (rec.issuedTo && rec.issuedTo.toLowerCase().includes(q)) ||
+            (rec.client && rec.client.toLowerCase().includes(q))
+          );
         } else {
           matchesSearch = (
             (rec.nocNumber && rec.nocNumber.toLowerCase().includes(q)) ||
@@ -518,12 +522,29 @@ class NOCApp {
           window.showToast('No requirement documents available to download.', 'info');
           return;
         }
-        window.showToast(`Starting sequential download for ${docs.length} requirement file(s)...`, 'info');
-        docs.forEach((d, idx) => {
+        const isGuest = window.nocAuth && window.nocAuth.isGuest();
+        window.showToast(`Starting download for ${docs.length} requirement file(s)...`, 'info');
+
+        for (let idx = 0; idx < docs.length; idx++) {
+          const d = docs[idx];
+          const isPdf = (d.type && d.type.includes('pdf')) || (d.name && d.name.toLowerCase().endsWith('.pdf'));
+          
+          let downloadData = d.dataUrl;
+          let downloadName = `Requirement_${d.name}`;
+
+          if (isGuest && isPdf) {
+            const baseName = d.name.replace(/\.pdf$/i, '');
+            downloadName = `Requirement_${baseName}_Page_1.pdf`;
+            const blob = await window.docViewer.getFirstPagePdfBlob(d.dataUrl);
+            if (blob) {
+              downloadData = blob;
+            }
+          }
+
           setTimeout(() => {
-            window.docViewer.triggerFileDownload(d.dataUrl, `Requirement_${d.name}`);
+            window.docViewer.triggerFileDownload(downloadData, downloadName);
           }, idx * 400);
-        });
+        }
       });
     }
 
@@ -835,8 +856,8 @@ class NOCApp {
       return;
     }
 
-    if (window.nocUI.pendingUploadFiles.length > 5) {
-      window.showToast('A maximum of 5 documents can be attached.', 'error');
+    if (window.nocUI.pendingUploadFiles.length > 1) {
+      window.showToast('Only 1 PDF document can be attached per NOC record.', 'error');
       return;
     }
 

@@ -146,28 +146,271 @@ class DocumentViewer {
   }
 
   /**
+   * Helper to parse dataUrl into Uint8Array bytes
+   */
+  getPdfBytes(dataUrl) {
+    if (!dataUrl) return null;
+    if (dataUrl instanceof Uint8Array) return dataUrl;
+    if (dataUrl instanceof ArrayBuffer) return new Uint8Array(dataUrl);
+
+    if (typeof dataUrl === 'string') {
+      if (dataUrl.startsWith('data:')) {
+        const parts = dataUrl.split(',');
+        const base64Clean = (parts[1] || '').replace(/\s/g, '');
+        const binaryString = atob(base64Clean);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes;
+      } else {
+        const base64Clean = dataUrl.replace(/\s/g, '');
+        const binaryString = atob(base64Clean);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Ensure PDF.js library and worker are loaded
+   */
+  async ensurePdfJsLoaded() {
+    if (window.pdfjsLib) {
+      if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+      return true;
+    }
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const check = () => {
+        if (window.pdfjsLib) {
+          if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          }
+          resolve(true);
+        } else if (attempts++ < 40) {
+          setTimeout(check, 100);
+        } else {
+          resolve(false);
+        }
+      };
+      check();
+    });
+  }
+
+  /**
+   * Ensure PDFLib library is loaded and accessible
+   */
+  async ensurePdfLibLoaded() {
+    if (window.PDFLib && window.PDFLib.PDFDocument) {
+      return true;
+    }
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const check = () => {
+        if (window.PDFLib && window.PDFLib.PDFDocument) {
+          resolve(true);
+        } else if (attempts++ < 40) {
+          setTimeout(check, 100);
+        } else {
+          resolve(false);
+        }
+      };
+      check();
+    });
+  }
+
+  /**
+   * Render Page 1 of a PDF onto a Canvas element (High-DPI)
+   */
+  async renderPdfPage1ToCanvas(pdfBytes, scale = 2.0) {
+    if (!pdfBytes) return null;
+    await this.ensurePdfJsLoaded();
+
+    if (window.pdfjsLib) {
+      try {
+        const dataCopy = pdfBytes.slice ? pdfBytes.slice(0) : new Uint8Array(pdfBytes);
+        const loadingTask = window.pdfjsLib.getDocument({ data: dataCopy });
+        const pdf = await loadingTask.promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        await page.render({ canvasContext: context, viewport }).promise;
+        return canvas;
+      } catch (err) {
+        console.warn('PDF.js page 1 rendering error:', err);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Generate a genuine 1-Page PDF Blob from a Canvas element
+   */
+  async canvasToSinglePagePdf(canvas) {
+    if (!canvas) return null;
+
+    // 1. Try PDF-Lib image embedding
+    await this.ensurePdfLibLoaded();
+    if (window.PDFLib && window.PDFLib.PDFDocument) {
+      try {
+        const { PDFDocument } = window.PDFLib;
+        const imgDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        const imgBytes = this.getPdfBytes(imgDataUrl);
+        const doc = await PDFDocument.create();
+        const embeddedImg = await doc.embedJpg(imgBytes);
+        const page = doc.addPage([embeddedImg.width, embeddedImg.height]);
+        page.drawImage(embeddedImg, {
+          x: 0,
+          y: 0,
+          width: embeddedImg.width,
+          height: embeddedImg.height,
+        });
+        const bytes = await doc.save();
+        return new Blob([bytes], { type: 'application/pdf' });
+      } catch (e) {
+        console.warn('PDFLib canvas embedding error:', e);
+      }
+    }
+
+    // 2. Pure JS Minimal valid PDF 1.4 builder (standard conforming)
+    try {
+      const imgDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      const parts = imgDataUrl.split(',');
+      const base64 = parts[1];
+      const binary = atob(base64);
+      const imgLen = binary.length;
+      const imgBytes = new Uint8Array(imgLen);
+      for (let i = 0; i < imgLen; i++) imgBytes[i] = binary.charCodeAt(i);
+
+      const w = Math.round(canvas.width);
+      const h = Math.round(canvas.height);
+
+      const header = `%PDF-1.4\n`;
+      const o1 = `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`;
+      const o2 = `2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n`;
+      const o3 = `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Contents 4 0 R /Resources << /XObject << /Im1 5 0 R >> >> >>\nendobj\n`;
+      const streamContent = `q\n${w} 0 0 ${h} 0 0 cm\n/Im1 Do\nQ\n`;
+      const o4 = `4 0 obj\n<< /Length ${streamContent.length} >>\nstream\n${streamContent}endstream\nendobj\n`;
+      const o5Head = `5 0 obj\n<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgLen} >>\nstream\n`;
+      const o5Tail = `\nendstream\nendobj\n`;
+
+      const encoder = new TextEncoder();
+      const bHead = encoder.encode(header + o1 + o2 + o3 + o4 + o5Head);
+      const bTail = encoder.encode(o5Tail + `xref\n0 6\n0000000000 65535 f \ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n%%EOF\n`);
+
+      const total = new Uint8Array(bHead.length + imgBytes.length + bTail.length);
+      total.set(bHead, 0);
+      total.set(imgBytes, bHead.length);
+      total.set(bTail, bHead.length + imgBytes.length);
+
+      return new Blob([total], { type: 'application/pdf' });
+    } catch (err) {
+      console.error('Pure JS PDF generation error:', err);
+    }
+    return null;
+  }
+
+  /**
+   * Extract first page of PDF and return as a genuine 1-page PDF Blob
+   */
+  async getFirstPagePdfBlob(dataUrl) {
+    if (!dataUrl) return null;
+
+    const pdfBytes = this.getPdfBytes(dataUrl);
+    if (!pdfBytes) return null;
+
+    // Priority 1: Vector/Text Page 1 Extraction with PDF-Lib
+    await this.ensurePdfLibLoaded();
+    if (window.PDFLib && window.PDFLib.PDFDocument) {
+      try {
+        const { PDFDocument } = window.PDFLib;
+        const srcDoc = await PDFDocument.load(pdfBytes.slice ? pdfBytes.slice(0) : pdfBytes, { ignoreEncryption: true });
+        
+        const singleDoc = await PDFDocument.create();
+        const [copiedPage] = await singleDoc.copyPages(srcDoc, [0]);
+        singleDoc.addPage(copiedPage);
+
+        const outBytes = await singleDoc.save();
+        return new Blob([outBytes], { type: 'application/pdf' });
+      } catch (err) {
+        console.warn('PDF-Lib exact page 1 extraction fallback to canvas:', err);
+      }
+    }
+
+    // Priority 2: Render Page 1 to Canvas via PDF.js, then build 1-Page PDF
+    try {
+      const canvas = await this.renderPdfPage1ToCanvas(pdfBytes, 2.0);
+      if (canvas) {
+        const pdfBlob = await this.canvasToSinglePagePdf(canvas);
+        if (pdfBlob) return pdfBlob;
+      }
+    } catch (e) {
+      console.warn('Render to single page PDF error:', e);
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract first page of PDF for Guest access restriction
+   * Generates a genuine 1-page standalone PDF document Data URL
+   */
+  async getFirstPagePdfDataUrl(dataUrl) {
+    const blob = await this.getFirstPagePdfBlob(dataUrl);
+    if (blob) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+    }
+    return dataUrl;
+  }
+
+  /**
    * Render the active document in the stage.
    */
-  renderCurrentDocument() {
+  async renderCurrentDocument() {
     if (!this.stage) return;
     const doc = this.currentDocs[this.currentIndex];
     if (!doc) return;
 
-    // Update Header info
-    if (this.titleEl) this.titleEl.textContent = `${doc.name} (${this.currentIndex + 1}/${this.currentDocs.length})`;
-    
+    const isGuest = window.nocAuth && window.nocAuth.isGuest();
     const isPDF = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
+
+    // Update Header info
+    let titleText = `${doc.name} (${this.currentIndex + 1}/${this.currentDocs.length})`;
+    if (isGuest && isPDF) {
+      titleText += ` [Page 1 Only - Guest Mode]`;
+    }
+    if (this.titleEl) this.titleEl.textContent = titleText;
     
     if (this.badgeEl) {
-      this.badgeEl.className = `viewer-badge ${isPDF ? 'pdf' : 'image'}`;
-      this.badgeEl.textContent = isPDF ? 'PDF Document' : 'Image';
+      this.badgeEl.className = `viewer-badge ${isGuest && isPDF ? 'page1' : (isPDF ? 'pdf' : 'image')}`;
+      this.badgeEl.textContent = isPDF ? (isGuest ? 'PDF Page 1' : 'PDF Document') : 'Image';
     }
 
     // Toggle controls visibility based on format
-    if (this.zoomInBtn) this.zoomInBtn.style.display = isPDF ? 'none' : 'inline-flex';
-    if (this.zoomOutBtn) this.zoomOutBtn.style.display = isPDF ? 'none' : 'inline-flex';
-    if (this.rotateBtn) this.rotateBtn.style.display = isPDF ? 'none' : 'inline-flex';
-    if (this.resetBtn) this.resetBtn.style.display = isPDF ? 'none' : 'inline-flex';
+    // For Guest viewing PDF, enable zoom & rotate controls for the Page 1 preview
+    const showZoomRotate = !isPDF || isGuest;
+    if (this.zoomInBtn) this.zoomInBtn.style.display = showZoomRotate ? 'inline-flex' : 'none';
+    if (this.zoomOutBtn) this.zoomOutBtn.style.display = showZoomRotate ? 'inline-flex' : 'none';
+    if (this.rotateBtn) this.rotateBtn.style.display = showZoomRotate ? 'inline-flex' : 'none';
+    if (this.resetBtn) this.resetBtn.style.display = showZoomRotate ? 'inline-flex' : 'none';
 
     // Update Nav buttons
     if (this.prevBtn) this.prevBtn.disabled = this.currentIndex === 0;
@@ -176,13 +419,63 @@ class DocumentViewer {
     // Render Content
     this.stage.innerHTML = '';
 
-    if (isPDF) {
-      // PDF Render via object / iframe
+    if (isPDF && !isGuest) {
+      // Admin: Interactive multi-page PDF iframe
       const iframe = document.createElement('iframe');
       iframe.className = 'viewer-pdf-frame';
       iframe.src = doc.dataUrl;
       iframe.title = doc.name;
       this.stage.appendChild(iframe);
+    } else if (isPDF && isGuest) {
+      // Guest: Render Page 1 ONLY on high-DPI canvas/image stage
+      const imgWrapper = document.createElement('div');
+      imgWrapper.className = 'viewer-image-wrapper';
+      imgWrapper.id = 'viewerImageWrapper';
+
+      const loadingNotice = document.createElement('div');
+      loadingNotice.style.cssText = 'color:#fff; text-align:center; padding:2rem; font-size:0.95rem;';
+      loadingNotice.innerHTML = 'Rendering Page 1 Preview...';
+      this.stage.appendChild(loadingNotice);
+
+      try {
+        const pdfBytes = this.getPdfBytes(doc.dataUrl);
+        const canvas = await this.renderPdfPage1ToCanvas(pdfBytes, 2.0);
+
+        this.stage.innerHTML = '';
+        if (canvas) {
+          canvas.className = 'viewer-image';
+          canvas.style.boxShadow = '0 10px 30px rgba(0, 0, 0, 0.6)';
+          canvas.style.borderRadius = '4px';
+          canvas.style.maxWidth = '90vw';
+          canvas.style.maxHeight = '80vh';
+          canvas.style.objectFit = 'contain';
+          canvas.style.background = '#FFFFFF';
+          imgWrapper.appendChild(canvas);
+          this.stage.appendChild(imgWrapper);
+          this.applyImageTransform();
+        } else {
+          // Fallback to standalone single-page PDF in iframe
+          if (!doc._guestPage1DataUrl) {
+            doc._guestPage1DataUrl = await this.getFirstPagePdfDataUrl(doc.dataUrl);
+          }
+          const iframe = document.createElement('iframe');
+          iframe.className = 'viewer-pdf-frame';
+          iframe.src = doc._guestPage1DataUrl;
+          iframe.title = `${doc.name} (Page 1)`;
+          this.stage.appendChild(iframe);
+        }
+      } catch (err) {
+        console.warn('Guest page 1 rendering error:', err);
+        if (!doc._guestPage1DataUrl) {
+          doc._guestPage1DataUrl = await this.getFirstPagePdfDataUrl(doc.dataUrl);
+        }
+        this.stage.innerHTML = '';
+        const iframe = document.createElement('iframe');
+        iframe.className = 'viewer-pdf-frame';
+        iframe.src = doc._guestPage1DataUrl;
+        iframe.title = `${doc.name} (Page 1)`;
+        this.stage.appendChild(iframe);
+      }
     } else {
       // Image Render
       const imgWrapper = document.createElement('div');
@@ -267,24 +560,66 @@ class DocumentViewer {
   }
 
   /**
-   * Download the currently viewed document
+   * Download the currently viewed document (Restricted to Page 1 for Guest)
    */
-  downloadCurrent() {
+  async downloadCurrent() {
     const doc = this.currentDocs[this.currentIndex];
     if (!doc) return;
-    this.triggerFileDownload(doc.dataUrl, doc.name);
+
+    const isGuest = window.nocAuth && window.nocAuth.isGuest();
+    const isPDF = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
+
+    if (isGuest && isPDF) {
+      const baseName = doc.name.replace(/\.pdf$/i, '');
+      const page1FileName = `${baseName}_Page_1.pdf`;
+
+      if (window.showToast) {
+        window.showToast('Extracting Page 1 for download...', 'info');
+      }
+
+      const singlePageBlob = await this.getFirstPagePdfBlob(doc.dataUrl);
+      if (singlePageBlob) {
+        this.triggerFileDownload(singlePageBlob, page1FileName);
+      } else {
+        const page1Url = await this.getFirstPagePdfDataUrl(doc.dataUrl);
+        this.triggerFileDownload(page1Url, page1FileName);
+      }
+    } else {
+      this.triggerFileDownload(doc.dataUrl, doc.name);
+    }
   }
 
   /**
    * Helper to initiate browser file download
    */
-  triggerFileDownload(dataUrl, fileName) {
+  triggerFileDownload(dataOrUrl, fileName) {
+    if (!dataOrUrl) {
+      if (window.showToast) window.showToast('No file data to download.', 'error');
+      return;
+    }
+
+    let url = dataOrUrl;
+    let isTempUrl = false;
+
+    if (dataOrUrl instanceof Blob) {
+      url = URL.createObjectURL(dataOrUrl);
+      isTempUrl = true;
+    } else if (dataOrUrl instanceof Uint8Array || dataOrUrl instanceof ArrayBuffer) {
+      const blob = new Blob([dataOrUrl], { type: 'application/pdf' });
+      url = URL.createObjectURL(blob);
+      isTempUrl = true;
+    }
+
     const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = fileName || 'download';
+    a.href = url;
+    a.download = fileName || 'download.pdf';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+
+    if (isTempUrl) {
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }
 
     if (window.showToast) {
       window.showToast(`Downloading "${fileName}"...`, 'success');

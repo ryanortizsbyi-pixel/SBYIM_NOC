@@ -317,18 +317,18 @@
               <textarea id="descriptionInput" class="form-textarea" placeholder="Detailed scope, location specifications, equipment details, and authorized work parameters..." required></textarea>
             </div>
 
-            <!-- Multi-Document Upload (Up to 5 files) -->
+            <!-- Single PDF Document Upload (1 file only) -->
             <div class="form-group col-span-2" style="margin-top:0.5rem;">
               <div class="form-label">
-                <span>Upload Documents (PDF or Images)</span>
-                <span style="font-weight: normal; color:var(--text-muted);" id="uploadSlotCount">0/5</span>
+                <span>Upload NOC Certificate / Document (PDF Only)</span>
+                <span style="font-weight: normal; color:var(--text-muted);" id="uploadSlotCount">0/1</span>
               </div>
               
               <div class="dropzone" id="docDropzone">
-                <div class="dropzone-icon">☁️</div>
-                <div class="dropzone-text">Click or drag & drop files here to upload</div>
-                <div class="dropzone-subtext">Supported formats: PDF, PNG, JPG, JPEG, WEBP, SVG (Up to 5 files total)</div>
-                <input type="file" id="docFileInput" multiple accept=".pdf,image/*" style="display:none;">
+                <div class="dropzone-icon">📄</div>
+                <div class="dropzone-text">Click or drag & drop PDF file here to upload</div>
+                <div class="dropzone-subtext">Supported format: PDF only (.pdf) &bull; Max 1 document</div>
+                <input type="file" id="docFileInput" accept=".pdf,application/pdf" style="display:none;">
               </div>
 
               <div class="doc-list-preview" id="docPreviewList">
@@ -637,6 +637,12 @@
 
   <!-- Supabase Official JavaScript SDK -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- PDF.js for High-Definition Client-Side Page 1 Rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+  <!-- PDF-Lib for Client-Side PDF First Page Processing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.9/pdf-lib.min.js"></script>
 
   <!-- Scripts -->
   <script src="js/supabaseClient.js"></script>

@@ -190,11 +190,11 @@ class UIManager {
     if (searchInput) {
       searchInput.placeholder = isAdmin
         ? 'Search by NOC #, Client, Contractor, Type, or Description...'
-        : 'Search by NOC Number';
+        : 'Search by NOC Number, Issued To, or Client...';
     }
 
     if (guestPromptText) {
-      guestPromptText.textContent = 'Please enter an NOC Number in the search bar above to look up and view certificate details.';
+      guestPromptText.textContent = 'Please enter an NOC Number, Issued To, or Client in the search bar above to look up and view certificate details.';
     }
 
     const closeLoginBtn = document.getElementById('btnCloseLoginModal');
@@ -610,7 +610,7 @@ class UIManager {
   }
 
   /**
-   * Render pending upload files inside the entry modal
+   * Render pending upload files inside the entry modal (Single PDF mode)
    */
   renderPendingUploads() {
     const container = document.getElementById('docPreviewList');
@@ -619,22 +619,29 @@ class UIManager {
 
     container.innerHTML = '';
     const currentCount = this.pendingUploadFiles.length;
-    if (countEl) countEl.textContent = `${currentCount}/5`;
+    if (countEl) countEl.textContent = `${currentCount}/1`;
 
     this.pendingUploadFiles.forEach((file, index) => {
-      const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
       const item = document.createElement('div');
       item.className = 'doc-preview-item';
       item.innerHTML = `
         <div class="doc-preview-info">
-          <span style="font-size:1.1rem;">${isPDF ? '📄' : '🖼️'}</span>
+          <span style="font-size:1.2rem;">📄</span>
           <div>
             <div class="doc-preview-name" title="${this.escapeHTML(file.name)}">${this.escapeHTML(file.name)}</div>
-            <div class="doc-preview-size">${this.formatBytes(file.size)}</div>
+            <div class="doc-preview-size">${this.formatBytes(file.size)} <span class="badge" style="background:#FEE2E2; color:#DC2626; font-size:0.7rem; padding:0.1rem 0.4rem; margin-left:0.35rem; font-weight:700;">PDF</span></div>
           </div>
         </div>
-        <button type="button" class="doc-remove-btn" data-index="${index}" title="Remove file">✕</button>
+        <div style="display:flex; align-items:center; gap:0.4rem;">
+          <button type="button" class="btn btn-sm btn-outline-primary doc-preview-btn" style="padding:0.25rem 0.6rem; font-size:0.75rem;" title="Preview PDF Document">👁️ Preview</button>
+          <button type="button" class="doc-remove-btn" data-index="${index}" title="Remove PDF file">✕</button>
+        </div>
       `;
+
+      item.querySelector('.doc-preview-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.docViewer.open(this.pendingUploadFiles, index);
+      });
 
       item.querySelector('.doc-remove-btn').addEventListener('click', (e) => {
         e.stopPropagation();
@@ -647,48 +654,48 @@ class UIManager {
   }
 
   /**
-   * Handle adding uploaded files to pending buffer with 5-file limit validation
+   * Handle adding uploaded file to pending buffer with 1 PDF file limit validation
    */
   handleFilesSelected(files) {
     if (!files || files.length === 0) return;
 
-    const remainingSlots = 5 - this.pendingUploadFiles.length;
-    if (remainingSlots <= 0) {
-      this.showToast('Maximum limit of 5 documents reached per NOC record.', 'error');
+    const fileList = Array.from(files);
+    
+    // Filter for PDF documents only
+    const pdfFiles = fileList.filter(file => 
+      file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    );
+
+    if (pdfFiles.length === 0) {
+      this.showToast('Invalid format. Please upload a PDF document only (.pdf).', 'error');
       return;
     }
 
-    const filesToProcess = Array.from(files).slice(0, remainingSlots);
-    if (files.length > remainingSlots) {
-      this.showToast(`Only ${remainingSlots} document(s) added. Maximum limit is 5 documents.`, 'info');
+    if (fileList.length > 1 || pdfFiles.length > 1) {
+      this.showToast('Only 1 PDF document is permitted per record. Selected the first PDF.', 'info');
     }
 
-    filesToProcess.forEach((file) => {
-      const isValidFormat = file.type === 'application/pdf' || 
-                            file.type.startsWith('image/') || 
-                            file.name.toLowerCase().endsWith('.pdf') ||
-                            file.name.toLowerCase().match(/\.(jpg|jpeg|png|webp|svg|gif)$/i);
+    const file = pdfFiles[0];
 
-      if (!isValidFormat) {
-        this.showToast(`"${file.name}" is not a supported PDF or Image format.`, 'error');
-        return;
-      }
-
-      // Read file into Data URL
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        this.pendingUploadFiles.push({
-          id: 'doc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
-          name: file.name,
-          type: file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
-          size: file.size,
-          dataUrl: e.target.result,
-          uploadedAt: new Date().toISOString()
-        });
-        this.renderPendingUploads();
-      };
-      reader.readAsDataURL(file);
-    });
+    // Read file into Data URL
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      // Set as the single pending document
+      this.pendingUploadFiles = [{
+        id: 'doc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+        name: file.name,
+        type: 'application/pdf',
+        size: file.size,
+        dataUrl: e.target.result,
+        uploadedAt: new Date().toISOString()
+      }];
+      this.renderPendingUploads();
+      this.showToast(`PDF document "${file.name}" attached successfully.`, 'success');
+    };
+    reader.onerror = () => {
+      this.showToast('Failed to read the selected PDF file.', 'error');
+    };
+    reader.readAsDataURL(file);
   }
 
   /**
@@ -751,16 +758,9 @@ class UIManager {
       </div>
 
       <div style="margin-top:1.5rem;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <h4 style="font-size:1rem; font-weight:700; color:var(--text-main);">
-            Attached Documents (${docs.length}/5)
-          </h4>
-          ${docs.length > 0 ? `
-            <button class="btn btn-sm btn-outline-primary" id="btnDetailsDownloadAll">
-              📥 Download All Attached Files
-            </button>
-          ` : ''}
-        </div>
+        <h4 style="font-size:1rem; font-weight:700; color:var(--text-main); margin-bottom:0.75rem;">
+          Attached Documents
+        </h4>
 
         ${docs.length === 0 ? `
           <p style="color:var(--text-muted); font-size:0.88rem; margin-top:0.75rem; font-style:italic;">
@@ -770,16 +770,20 @@ class UIManager {
           <div class="doc-gallery">
             ${docs.map((doc, idx) => {
               const isPDF = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
+              const isGuest = window.nocAuth && window.nocAuth.isGuest();
               return `
                 <div class="doc-card ${isPDF ? 'pdf' : 'image'}">
                   <div class="doc-card-icon">${isPDF ? '📄' : '🖼️'}</div>
                   <div class="doc-card-name" title="${this.escapeHTML(doc.name)}">${this.escapeHTML(doc.name)}</div>
-                  <div class="doc-card-size">${this.formatBytes(doc.size)}</div>
+                  <div class="doc-card-size">
+                    ${this.formatBytes(doc.size)}
+                    ${isGuest && isPDF ? `<span class="badge" style="background:#FEF3C7; color:#92400E; font-size:0.68rem; padding:0.1rem 0.35rem; margin-left:0.25rem; font-weight:700;">Page 1 Only</span>` : ''}
+                  </div>
                   <div class="doc-card-actions">
-                    <button class="btn btn-sm btn-primary" data-view-doc-idx="${idx}" title="Preview Document">
-                      👁️ View
+                    <button class="btn btn-sm btn-primary" data-view-doc-idx="${idx}" title="${isGuest && isPDF ? 'Preview First Page' : 'Preview Document'}">
+                      👁️ ${isGuest && isPDF ? 'View Page 1' : 'View'}
                     </button>
-                    <button class="btn btn-sm btn-outline" data-download-doc-idx="${idx}" title="Download File">
+                    <button class="btn btn-sm btn-outline" data-download-doc-idx="${idx}" title="${isGuest && isPDF ? 'Download First Page Only' : 'Download File'}">
                       📥
                     </button>
                   </div>
@@ -800,19 +804,29 @@ class UIManager {
     });
 
     content.querySelectorAll('[data-download-doc-idx]').forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const idx = parseInt(btn.getAttribute('data-download-doc-idx'), 10);
         const d = docs[idx];
-        if (d) window.docViewer.triggerFileDownload(d.dataUrl, d.name);
+        if (!d) return;
+
+        const isGuest = window.nocAuth && window.nocAuth.isGuest();
+        const isPDF = d.type === 'application/pdf' || d.name.toLowerCase().endsWith('.pdf');
+
+        if (isGuest && isPDF) {
+          const baseName = d.name.replace(/\.pdf$/i, '');
+          const page1FileName = `${baseName}_Page_1.pdf`;
+          const blob = await window.docViewer.getFirstPagePdfBlob(d.dataUrl);
+          if (blob) {
+            window.docViewer.triggerFileDownload(blob, page1FileName);
+          } else {
+            const page1Url = await window.docViewer.getFirstPagePdfDataUrl(d.dataUrl);
+            window.docViewer.triggerFileDownload(page1Url, page1FileName);
+          }
+        } else {
+          window.docViewer.triggerFileDownload(d.dataUrl, d.name);
+        }
       });
     });
-
-    const downloadAllBtn = document.getElementById('btnDetailsDownloadAll');
-    if (downloadAllBtn) {
-      downloadAllBtn.addEventListener('click', () => {
-        this.downloadAllRecordDocs(record.id);
-      });
-    }
 
     modal.classList.add('active');
   }
@@ -885,7 +899,7 @@ class UIManager {
   }
 
   /**
-   * Download all documents attached to a record sequentially
+   * Download all documents attached to a record sequentially (Page 1 only for Guest)
    */
   async downloadAllRecordDocs(id) {
     const record = await window.nocDB.getById(id);
@@ -894,12 +908,29 @@ class UIManager {
       return;
     }
 
+    const isGuest = window.nocAuth && window.nocAuth.isGuest();
     this.showToast(`Preparing download for ${record.documents.length} document(s)...`, 'info');
-    record.documents.forEach((doc, idx) => {
+
+    for (let idx = 0; idx < record.documents.length; idx++) {
+      const doc = record.documents[idx];
+      const isPDF = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
+      
+      let downloadData = doc.dataUrl;
+      let downloadName = `${record.nocNumber}_${doc.name}`;
+
+      if (isGuest && isPDF) {
+        const baseName = doc.name.replace(/\.pdf$/i, '');
+        downloadName = `${record.nocNumber}_${baseName}_Page_1.pdf`;
+        const blob = await window.docViewer.getFirstPagePdfBlob(doc.dataUrl);
+        if (blob) {
+          downloadData = blob;
+        }
+      }
+
       setTimeout(() => {
-        window.docViewer.triggerFileDownload(doc.dataUrl, `${record.nocNumber}_${doc.name}`);
+        window.docViewer.triggerFileDownload(downloadData, downloadName);
       }, idx * 400);
-    });
+    }
   }
 
   /**
@@ -995,10 +1026,27 @@ class UIManager {
         });
 
         container.querySelectorAll('[data-download-req-idx]').forEach(btn => {
-          btn.addEventListener('click', () => {
+          btn.addEventListener('click', async () => {
             const idx = parseInt(btn.getAttribute('data-download-req-idx'), 10);
             const d = docs[idx];
-            if (d) window.docViewer.triggerFileDownload(d.dataUrl, d.name);
+            if (!d) return;
+
+            const isGuest = window.nocAuth && window.nocAuth.isGuest();
+            const isPDF = (d.type && d.type.includes('pdf')) || (d.name && d.name.toLowerCase().endsWith('.pdf'));
+
+            if (isGuest && isPDF) {
+              const baseName = d.name.replace(/\.pdf$/i, '');
+              const page1FileName = `Requirement_${baseName}_Page_1.pdf`;
+              const blob = await window.docViewer.getFirstPagePdfBlob(d.dataUrl);
+              if (blob) {
+                window.docViewer.triggerFileDownload(blob, page1FileName);
+              } else {
+                const page1Url = await window.docViewer.getFirstPagePdfDataUrl(d.dataUrl);
+                window.docViewer.triggerFileDownload(page1Url, page1FileName);
+              }
+            } else {
+              window.docViewer.triggerFileDownload(d.dataUrl, d.name);
+            }
           });
         });
 

@@ -57,6 +57,11 @@
   color: #fff;
 }
 
+.viewer-badge.page1 {
+  background: #D97706;
+  color: #fff;
+}
+
 .viewer-badge.image {
   background: var(--accent-green);
   color: #fff;
