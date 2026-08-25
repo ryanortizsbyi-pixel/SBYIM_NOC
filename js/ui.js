@@ -1077,6 +1077,125 @@ class UIManager {
   }
 
   /**
+   * Open the SBYI COC Modal (supporting up to 8 PDF documents)
+   */
+  async openCocModal() {
+    const modal = document.getElementById('sbyiCocModal');
+    const badgeEl = document.getElementById('cocDocCountBadge');
+    const container = document.getElementById('cocDocumentsContainer');
+    const adminUpload = document.getElementById('adminCocUploadSection');
+    const guestNotice = document.getElementById('guestCocNotice');
+    const isAdmin = window.nocAuth.isAdmin();
+    const isGuest = window.nocAuth.isGuest();
+
+    const docs = await window.nocDB.getCocDocs();
+
+    // Update counter badge
+    if (badgeEl) {
+      badgeEl.textContent = `${docs.length} / 8 PDF Documents`;
+      badgeEl.style.background = docs.length >= 8 ? '#FEF3C7' : '#EFF6FF';
+      badgeEl.style.color = docs.length >= 8 ? '#92400E' : '#1E40AF';
+      badgeEl.style.borderColor = docs.length >= 8 ? '#FCD34D' : '#BFDBFE';
+    }
+
+    // Role-based section visibility
+    if (adminUpload) {
+      adminUpload.style.display = (isAdmin && docs.length < 8) ? 'block' : 'none';
+    }
+    if (guestNotice) {
+      guestNotice.style.display = isAdmin ? 'none' : 'block';
+    }
+
+    // Render document list
+    if (container) {
+      if (docs.length === 0) {
+        container.innerHTML = `
+          <div style="text-align:center; padding:2rem; background:var(--bg-subtle); border-radius:var(--radius-md); color:var(--text-muted);">
+            <div style="font-size:2rem; margin-bottom:0.5rem;">📜</div>
+            <p style="font-size:0.9rem;">No SBYI COC documents uploaded yet.</p>
+            ${isAdmin ? '<p style="font-size:0.8rem; margin-top:0.25rem;">Use the upload area above to attach up to 8 PDF certificates.</p>' : ''}
+          </div>
+        `;
+      } else {
+        container.innerHTML = docs.map((doc, idx) => {
+          return `
+            <div style="background:var(--bg-surface); border:1px solid var(--border-light); border-radius:var(--radius-md); padding:0.9rem 1.15rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; box-shadow:var(--shadow-sm); transition:all var(--transition-fast);">
+              <div style="display:flex; align-items:center; gap:0.85rem; overflow:hidden;">
+                <span class="file-item-badge pdf" style="flex-shrink:0;">PDF</span>
+                <div style="overflow:hidden;">
+                  <div style="font-size:0.9rem; font-weight:600; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${this.escapeHTML(doc.name)}">
+                    ${this.escapeHTML(doc.name)}
+                  </div>
+                  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; font-size:0.75rem; color:var(--text-muted); margin-top:0.15rem;">
+                    <span>${this.formatBytes(doc.size || 0)}</span>
+                    <span>•</span>
+                    <span>Uploaded: ${this.formatDate(doc.uploadedAt || new Date().toISOString())}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style="display:flex; align-items:center; gap:0.5rem; flex-shrink:0;">
+                <button type="button" class="btn btn-outline-primary" style="padding:0.4rem 0.75rem; font-size:0.8rem;" data-preview-coc-idx="${idx}" title="Preview Complete Document">
+                  👁️ View
+                </button>
+                <button type="button" class="btn btn-outline" style="padding:0.4rem 0.75rem; font-size:0.8rem;" data-download-coc-idx="${idx}" title="Download File">
+                  📥 Download
+                </button>
+                ${isAdmin ? `
+                  <button type="button" class="btn btn-danger" style="padding:0.4rem 0.65rem; font-size:0.8rem;" data-delete-coc-id="${doc.id}" title="Delete Document">
+                    🗑️
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        // Bind item action clicks
+        container.querySelectorAll('[data-preview-coc-idx]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = parseInt(btn.getAttribute('data-preview-coc-idx'), 10);
+            window.docViewer.open(docs, idx, 'SBYI Certificate of Conformity', { allowFullPages: true });
+          });
+        });
+
+        container.querySelectorAll('[data-download-coc-idx]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = parseInt(btn.getAttribute('data-download-coc-idx'), 10);
+            const d = docs[idx];
+            if (d) {
+              window.docViewer.triggerFileDownload(d.dataUrl, d.name);
+            }
+          });
+        });
+
+        container.querySelectorAll('[data-delete-coc-id]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!window.nocAuth.isAdmin()) {
+              this.showToast('Admin access required to delete SBYI COC documents.', 'error');
+              return;
+            }
+            const docId = btn.getAttribute('data-delete-coc-id');
+            await window.nocDB.deleteCocDoc(docId);
+            this.showToast('SBYI COC document removed.', 'info');
+            await this.openCocModal();
+          });
+        });
+      }
+    }
+
+    if (modal) modal.classList.add('active');
+  }
+
+  /**
+   * Close the SBYI COC Modal
+   */
+  closeCocModal() {
+    const modal = document.getElementById('sbyiCocModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  /**
    * Returns the complete PostgreSQL Schema SQL string
    */
   getSqlSchemaText() {
@@ -1123,14 +1242,27 @@ CREATE TABLE IF NOT EXISTS public.noc_requirements_docs (
 
 CREATE INDEX IF NOT EXISTS idx_noc_req_docs_uploaded_at ON public.noc_requirements_docs (uploaded_at DESC);
 
--- 3. TABLE: noc_custom_types (Dynamic NOC Categories)
+-- 3. TABLE: sbyi_coc_docs (SBYI Certificate of Conformity PDF Documents)
+CREATE TABLE IF NOT EXISTS public.sbyi_coc_docs (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(100) NOT NULL DEFAULT 'application/pdf',
+    size BIGINT NOT NULL DEFAULT 0,
+    data_url TEXT NOT NULL,
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    uploaded_by VARCHAR(255) NOT NULL DEFAULT 'SBYI Management'
+);
+
+CREATE INDEX IF NOT EXISTS idx_sbyi_coc_docs_uploaded_at ON public.sbyi_coc_docs (uploaded_at DESC);
+
+-- 4. TABLE: noc_custom_types (Dynamic NOC Categories)
 CREATE TABLE IF NOT EXISTS public.noc_custom_types (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) UNIQUE NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
--- 4. AUTOMATIC TIMESTAMP TRIGGER
+-- 5. AUTOMATIC TIMESTAMP TRIGGER
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -1145,9 +1277,10 @@ CREATE TRIGGER trg_noc_records_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_updated_at();
 
--- 5. ROW LEVEL SECURITY (RLS) POLICIES
+-- 6. ROW LEVEL SECURITY (RLS) POLICIES
 ALTER TABLE public.noc_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_requirements_docs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sbyi_coc_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_custom_types ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow all operations on noc_records" ON public.noc_records;
@@ -1155,6 +1288,9 @@ CREATE POLICY "Allow all operations on noc_records" ON public.noc_records FOR AL
 
 DROP POLICY IF EXISTS "Allow all operations on noc_requirements_docs" ON public.noc_requirements_docs;
 CREATE POLICY "Allow all operations on noc_requirements_docs" ON public.noc_requirements_docs FOR ALL TO public USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all operations on sbyi_coc_docs" ON public.sbyi_coc_docs;
+CREATE POLICY "Allow all operations on sbyi_coc_docs" ON public.sbyi_coc_docs FOR ALL TO public USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all operations on noc_custom_types" ON public.noc_custom_types;
 CREATE POLICY "Allow all operations on noc_custom_types" ON public.noc_custom_types FOR ALL TO public USING (true) WITH CHECK (true);

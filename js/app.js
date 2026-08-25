@@ -632,6 +632,159 @@ class NOCApp {
       });
     }
 
+    // SBYI COC Modal (Up to 8 PDF Documents)
+    const btnSbyiCoc = document.getElementById('btnSbyiCoc');
+    const btnCloseCocModal = document.getElementById('btnCloseCocModal');
+    const btnCloseCocModalFooter = document.getElementById('btnCloseCocModalFooter');
+    const btnDownloadAllCocDocs = document.getElementById('btnDownloadAllCocDocs');
+    const cocDropzone = document.getElementById('cocDropzone');
+    const cocFilesInput = document.getElementById('cocFilesInput');
+
+    if (btnSbyiCoc) {
+      btnSbyiCoc.addEventListener('click', () => {
+        window.nocUI.openCocModal();
+      });
+    }
+
+    if (btnCloseCocModal) {
+      btnCloseCocModal.addEventListener('click', () => {
+        window.nocUI.closeCocModal();
+      });
+    }
+
+    if (btnCloseCocModalFooter) {
+      btnCloseCocModalFooter.addEventListener('click', () => {
+        window.nocUI.closeCocModal();
+      });
+    }
+
+    if (btnDownloadAllCocDocs) {
+      btnDownloadAllCocDocs.addEventListener('click', async () => {
+        const docs = await window.nocDB.getCocDocs();
+        if (!docs || docs.length === 0) {
+          window.showToast('No SBYI COC documents available to download.', 'info');
+          return;
+        }
+        window.showToast(`Starting download for ${docs.length} SBYI COC file(s)...`, 'info');
+
+        for (let idx = 0; idx < docs.length; idx++) {
+          const d = docs[idx];
+          setTimeout(() => {
+            window.docViewer.triggerFileDownload(d.dataUrl, `SBYI_COC_${d.name}`);
+          }, idx * 400);
+        }
+      });
+    }
+
+    if (cocDropzone && cocFilesInput) {
+      cocDropzone.addEventListener('click', () => {
+        if (!window.nocAuth.isAdmin()) {
+          window.showToast('Admin privileges required to upload SBYI COC documents.', 'error');
+          return;
+        }
+        cocFilesInput.click();
+      });
+
+      const handleCocUploads = async (fileList) => {
+        if (!window.nocAuth.isAdmin()) {
+          window.showToast('Admin privileges required to upload SBYI COC documents.', 'error');
+          return;
+        }
+
+        const files = Array.from(fileList);
+        if (files.length === 0) return;
+
+        const existingDocs = await window.nocDB.getCocDocs();
+        const availableSlots = 8 - existingDocs.length;
+
+        if (availableSlots <= 0) {
+          window.showToast('Maximum of 8 SBYI COC PDF documents reached. Please delete an existing document first.', 'error');
+          return;
+        }
+
+        // Validate strictly PDF files only
+        const pdfFiles = files.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+        const rejectedCount = files.length - pdfFiles.length;
+
+        if (rejectedCount > 0) {
+          window.showToast(`${rejectedCount} non-PDF file(s) skipped. SBYI COC accepts PDF files only.`, 'warning');
+        }
+
+        if (pdfFiles.length === 0) {
+          window.showToast('Only PDF files can be uploaded.', 'error');
+          return;
+        }
+
+        const toUpload = pdfFiles.slice(0, availableSlots);
+        if (pdfFiles.length > availableSlots) {
+          window.showToast(`Only ${availableSlots} file(s) can be added (max 8 total).`, 'info');
+        }
+
+        window.showToast(`Uploading ${toUpload.length} SBYI COC PDF file(s)...`, 'info');
+
+        const newDocs = [];
+        for (const file of toUpload) {
+          if (file.size > 25 * 1024 * 1024) {
+            window.showToast(`"${file.name}" exceeds 25MB limit.`, 'error');
+            continue;
+          }
+
+          const dataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.readAsDataURL(file);
+          });
+
+          newDocs.push({
+            id: 'coc_doc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: file.name,
+            type: 'application/pdf',
+            size: file.size,
+            dataUrl: dataUrl,
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: window.nocAuth.currentUser?.displayName || 'Admin'
+          });
+        }
+
+        const updatedList = [...existingDocs, ...newDocs];
+        await window.nocDB.saveCocDocs(updatedList);
+        await window.nocUI.openCocModal();
+        window.showToast(`Successfully uploaded ${newDocs.length} SBYI COC PDF document(s)!`, 'success');
+        cocFilesInput.value = '';
+      };
+
+      cocFilesInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          handleCocUploads(e.target.files);
+        }
+      });
+
+      ['dragenter', 'dragover'].forEach(eventName => {
+        cocDropzone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          cocDropzone.style.borderColor = '#D97706';
+          cocDropzone.style.background = '#FEF3C7';
+        });
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        cocDropzone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          cocDropzone.style.borderColor = '#F59E0B';
+          cocDropzone.style.background = 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)';
+        });
+      });
+
+      cocDropzone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        if (dt && dt.files && dt.files.length > 0) {
+          handleCocUploads(dt.files);
+        }
+      });
+    }
+
     // Export Utilities
     const btnExportCSV = document.getElementById('btnExportCSV');
     const btnExportJSON = document.getElementById('btnExportJSON');

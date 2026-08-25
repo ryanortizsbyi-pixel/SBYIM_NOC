@@ -177,6 +177,36 @@ class NOCDatabase {
     };
   }
 
+  /**
+   * Maps SBYI COC Doc frontend model to PostgreSQL row
+   */
+  mapCocDocToDb(doc) {
+    return {
+      id: doc.id || 'coc_doc_' + Date.now(),
+      name: doc.name || 'Untitled Document.pdf',
+      type: 'application/pdf',
+      size: Number(doc.size || 0),
+      data_url: doc.dataUrl || doc.data_url || '',
+      uploaded_at: doc.uploadedAt || doc.uploaded_at || new Date().toISOString(),
+      uploaded_by: doc.uploadedBy || doc.uploaded_by || 'SBYI Management'
+    };
+  }
+
+  /**
+   * Maps PostgreSQL row to frontend SBYI COC Doc model
+   */
+  mapDbToCocDoc(row) {
+    return {
+      id: String(row.id),
+      name: row.name,
+      type: 'application/pdf',
+      size: Number(row.size || 0),
+      dataUrl: row.data_url || row.dataUrl,
+      uploadedAt: row.uploaded_at || row.uploadedAt,
+      uploadedBy: row.uploaded_by || row.uploadedBy || 'SBYI Management'
+    };
+  }
+
   // ==========================================================================
   // CORE NOC RECORD OPERATIONS
   // ==========================================================================
@@ -503,6 +533,94 @@ class NOCDatabase {
     const docs = await this.getRequirementsDocs();
     const filtered = docs.filter(d => d.id !== id);
     return await this.saveRequirementsDocs(filtered);
+  }
+
+  // ==========================================================================
+  // SBYI COC (CERTIFICATE OF CONFORMITY) DOCUMENTS (Max 8 PDF Documents)
+  // ==========================================================================
+
+  /**
+   * Get all stored SBYI COC Documents (PDF only, max 8)
+   */
+  async getCocDocs() {
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { data, error } = await client
+          .from('sbyi_coc_docs')
+          .select('*')
+          .order('uploaded_at', { ascending: false })
+          .limit(8);
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          return data.map(row => this.mapDbToCocDoc(row));
+        }
+      } catch (err) {
+        console.warn('Supabase getCocDocs failed, reading local:', err.message);
+      }
+    }
+
+    // Fallback to localStorage or default seed
+    try {
+      const stored = localStorage.getItem('sbyi_coc_documents_v1');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.warn('Could not read COC docs from localStorage', e);
+    }
+    return window.DEFAULT_SBYI_COC_DOCS || [];
+  }
+
+  /**
+   * Save SBYI COC Documents list (Enforcing 8 maximum PDF files)
+   */
+  async saveCocDocs(docs) {
+    const clamped = (docs || [])
+      .filter(d => d.type === 'application/pdf' || (d.name && d.name.toLowerCase().endsWith('.pdf')))
+      .slice(0, 8);
+
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const dbRows = clamped.map(d => this.mapCocDocToDb(d));
+        
+        // Clear old and insert new
+        await client.from('sbyi_coc_docs').delete().neq('id', '___none___');
+        if (dbRows.length > 0) {
+          const { error } = await client.from('sbyi_coc_docs').insert(dbRows);
+          if (error) throw error;
+        }
+      } catch (err) {
+        console.warn('Supabase saveCocDocs failed, saving locally:', err.message);
+      }
+    }
+
+    try {
+      localStorage.setItem('sbyi_coc_documents_v1', JSON.stringify(clamped));
+    } catch (e) {
+      console.warn('Could not write COC docs to localStorage', e);
+    }
+    return clamped;
+  }
+
+  /**
+   * Delete a single SBYI COC document by ID
+   */
+  async deleteCocDoc(id) {
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        await client.from('sbyi_coc_docs').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Supabase deleteCocDoc failed:', err.message);
+      }
+    }
+
+    const docs = await this.getCocDocs();
+    const filtered = docs.filter(d => d.id !== id);
+    return await this.saveCocDocs(filtered);
   }
 
   // ==========================================================================

@@ -98,9 +98,9 @@ class DocumentViewer {
   }
 
   /**
-   * Open the viewer with an array of documents and starting index.
+   * Open the viewer with an array of documents, starting index, context title, and options.
    */
-  open(docs = [], startIndex = 0) {
+  open(docs = [], startIndex = 0, contextTitle = '', options = {}) {
     if (!docs || docs.length === 0) {
       if (window.showToast) window.showToast('No documents available to view.', 'info');
       return;
@@ -108,6 +108,8 @@ class DocumentViewer {
 
     this.currentDocs = docs;
     this.currentIndex = Math.min(Math.max(0, startIndex), docs.length - 1);
+    this.contextTitle = contextTitle || '';
+    this.currentOptions = options || {};
     this.zoomLevel = 1;
     this.rotation = 0;
 
@@ -391,22 +393,23 @@ class DocumentViewer {
 
     const isGuest = window.nocAuth && window.nocAuth.isGuest();
     const isPDF = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
+    const isRestrictedGuest = isGuest && isPDF && !this.currentOptions?.allowFullPages;
 
     // Update Header info
     let titleText = `${doc.name} (${this.currentIndex + 1}/${this.currentDocs.length})`;
-    if (isGuest && isPDF) {
+    if (isRestrictedGuest) {
       titleText += ` [Page 1 Only - Guest Mode]`;
     }
     if (this.titleEl) this.titleEl.textContent = titleText;
     
     if (this.badgeEl) {
-      this.badgeEl.className = `viewer-badge ${isGuest && isPDF ? 'page1' : (isPDF ? 'pdf' : 'image')}`;
-      this.badgeEl.textContent = isPDF ? (isGuest ? 'PDF Page 1' : 'PDF Document') : 'Image';
+      this.badgeEl.className = `viewer-badge ${isRestrictedGuest ? 'page1' : (isPDF ? 'pdf' : 'image')}`;
+      this.badgeEl.textContent = isPDF ? (isRestrictedGuest ? 'PDF Page 1' : 'PDF Document') : 'Image';
     }
 
     // Toggle controls visibility based on format
-    // For Guest viewing PDF, enable zoom & rotate controls for the Page 1 preview
-    const showZoomRotate = !isPDF || isGuest;
+    // For Guest viewing restricted PDF, enable zoom & rotate controls for the Page 1 preview
+    const showZoomRotate = !isPDF || isRestrictedGuest;
     if (this.zoomInBtn) this.zoomInBtn.style.display = showZoomRotate ? 'inline-flex' : 'none';
     if (this.zoomOutBtn) this.zoomOutBtn.style.display = showZoomRotate ? 'inline-flex' : 'none';
     if (this.rotateBtn) this.rotateBtn.style.display = showZoomRotate ? 'inline-flex' : 'none';
@@ -419,14 +422,14 @@ class DocumentViewer {
     // Render Content
     this.stage.innerHTML = '';
 
-    if (isPDF && !isGuest) {
-      // Admin: Interactive multi-page PDF iframe
+    if (isPDF && !isRestrictedGuest) {
+      // Full Interactive multi-page PDF iframe
       const iframe = document.createElement('iframe');
       iframe.className = 'viewer-pdf-frame';
       iframe.src = doc.dataUrl;
       iframe.title = doc.name;
       this.stage.appendChild(iframe);
-    } else if (isPDF && isGuest) {
+    } else if (isPDF && isRestrictedGuest) {
       // Guest: Render Page 1 ONLY on high-DPI canvas/image stage
       const imgWrapper = document.createElement('div');
       imgWrapper.className = 'viewer-image-wrapper';
@@ -560,7 +563,7 @@ class DocumentViewer {
   }
 
   /**
-   * Download the currently viewed document (Restricted to Page 1 for Guest)
+   * Download the currently viewed document (Restricted to Page 1 for Guest on NOC records)
    */
   async downloadCurrent() {
     const doc = this.currentDocs[this.currentIndex];
@@ -568,8 +571,9 @@ class DocumentViewer {
 
     const isGuest = window.nocAuth && window.nocAuth.isGuest();
     const isPDF = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
+    const isRestricted = isGuest && isPDF && !this.currentOptions?.allowFullPages;
 
-    if (isGuest && isPDF) {
+    if (isRestricted) {
       const baseName = doc.name.replace(/\.pdf$/i, '');
       const page1FileName = `${baseName}_Page_1.pdf`;
 

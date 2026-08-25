@@ -49,7 +49,22 @@ CREATE TABLE IF NOT EXISTS public.noc_requirements_docs (
 CREATE INDEX IF NOT EXISTS idx_noc_req_docs_uploaded_at ON public.noc_requirements_docs (uploaded_at DESC);
 
 -- ----------------------------------------------------------------------------
--- 3. Table: noc_custom_types
+-- 3. Table: sbyi_coc_docs (SBYI Certificate of Conformity PDF Documents)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.sbyi_coc_docs (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(100) NOT NULL DEFAULT 'application/pdf',
+    size BIGINT NOT NULL DEFAULT 0,
+    data_url TEXT NOT NULL,
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    uploaded_by VARCHAR(255) NOT NULL DEFAULT 'SBYI Management'
+);
+
+CREATE INDEX IF NOT EXISTS idx_sbyi_coc_docs_uploaded_at ON public.sbyi_coc_docs (uploaded_at DESC);
+
+-- ----------------------------------------------------------------------------
+-- 4. Table: noc_custom_types
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.noc_custom_types (
     id BIGSERIAL PRIMARY KEY,
@@ -58,7 +73,7 @@ CREATE TABLE IF NOT EXISTS public.noc_custom_types (
 );
 
 -- ----------------------------------------------------------------------------
--- 4. Trigger: Auto updated_at timestamp
+-- 5. Trigger: Auto updated_at timestamp
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
@@ -75,10 +90,11 @@ CREATE TRIGGER trg_noc_records_updated_at
     EXECUTE FUNCTION public.handle_updated_at();
 
 -- ----------------------------------------------------------------------------
--- 5. Row Level Security (RLS) Policies
+-- 6. Row Level Security (RLS) Policies
 -- ----------------------------------------------------------------------------
 ALTER TABLE public.noc_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_requirements_docs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sbyi_coc_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_custom_types ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow all operations on noc_records" ON public.noc_records;
@@ -88,6 +104,10 @@ CREATE POLICY "Allow all operations on noc_records"
 DROP POLICY IF EXISTS "Allow all operations on noc_requirements_docs" ON public.noc_requirements_docs;
 CREATE POLICY "Allow all operations on noc_requirements_docs"
     ON public.noc_requirements_docs FOR ALL TO public USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all operations on sbyi_coc_docs" ON public.sbyi_coc_docs;
+CREATE POLICY "Allow all operations on sbyi_coc_docs"
+    ON public.sbyi_coc_docs FOR ALL TO public USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all operations on noc_custom_types" ON public.noc_custom_types;
 CREATE POLICY "Allow all operations on noc_custom_types"

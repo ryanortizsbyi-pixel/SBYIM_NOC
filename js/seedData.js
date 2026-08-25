@@ -354,6 +354,37 @@ const DEFAULT_NOC_REQUIREMENTS_DOCS = [
   }
 ];
 
+// Default SBYI COC (Certificate of Conformity) Documents (Max 8 PDF files)
+const DEFAULT_SBYI_COC_DOCS = [
+  {
+    id: 'coc_doc_01',
+    name: 'SBYI_COC_Marine_Operations_2026.pdf',
+    type: 'application/pdf',
+    size: 245760,
+    dataUrl: createSamplePDFDataURL('SBYI Marine Operations & Berthing Compliance Certificate', 'COC-SBYI-2026-M01'),
+    uploadedAt: '2026-02-15T09:00:00.000Z',
+    uploadedBy: 'SBYI Management'
+  },
+  {
+    id: 'coc_doc_02',
+    name: 'SBYI_COC_Environmental_Safety.pdf',
+    type: 'application/pdf',
+    size: 312500,
+    dataUrl: createSamplePDFDataURL('Sir Bani Yas Island Environmental Safety Certificate of Conformity', 'COC-SBYI-2026-E02'),
+    uploadedAt: '2026-03-01T11:20:00.000Z',
+    uploadedBy: 'SBYI Management'
+  },
+  {
+    id: 'coc_doc_03',
+    name: 'SBYI_COC_Logistics_Transport.pdf',
+    type: 'application/pdf',
+    size: 198656,
+    dataUrl: createSamplePDFDataURL('SBYI Island Logistics & Transport Permit Conformity', 'COC-SBYI-2026-L03'),
+    uploadedAt: '2026-03-10T14:30:00.000Z',
+    uploadedBy: 'SBYI Management'
+  }
+];
+
 /**
  * Seeds the database if empty on startup.
  */
@@ -372,5 +403,6 @@ async function seedInitialDatabaseIfEmpty() {
 }
 
 window.DEFAULT_NOC_REQUIREMENTS_DOCS = DEFAULT_NOC_REQUIREMENTS_DOCS;
+window.DEFAULT_SBYI_COC_DOCS = DEFAULT_SBYI_COC_DOCS;
 window.seedInitialDatabaseIfEmpty = seedInitialDatabaseIfEmpty;
 window.INITIAL_NOC_SEED_DATA = INITIAL_NOC_SEED_DATA;

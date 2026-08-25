@@ -62,6 +62,13 @@
           </svg>
           NOC Requirements
         </button>
+        <button class="btn btn-amber" id="btnSbyiCoc" title="SBYI COC - Certificate of Conformity & Compliance Documents" style="background: linear-gradient(135deg, #F59E0B, #D97706); color:#fff; border-color:#D97706;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            <path d="m9 12 2 2 4-4"></path>
+          </svg>
+          SBYI COC
+        </button>
       </div>
     </div>
   </header>
@@ -484,6 +491,60 @@
           📥 Download All Documents
         </button>
         <button type="button" class="btn btn-outline" id="btnCloseReqModalFooter">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. SBYI COC Modal (Up to 8 PDF Documents) -->
+  <div class="modal-overlay" id="sbyiCocModal">
+    <div class="modal-container" style="max-width:760px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <h3 class="modal-title">
+            <span style="color:#D97706">🛡️</span> SBYI Certificate of Conformity (COC)
+          </h3>
+          <span class="badge" id="cocDocCountBadge" style="background:#FEF3C7; color:#92400E; border:1px solid #FCD34D; font-weight:700; font-size:0.78rem;">
+            0 / 8 PDF Documents
+          </span>
+        </div>
+        <button class="modal-close" id="btnCloseCocModal">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height:75vh; overflow-y:auto;">
+        <!-- Admin Upload Section (Admin Only, visible when < 8 docs) -->
+        <div id="adminCocUploadSection" style="margin-bottom:1.5rem;">
+          <div class="dropzone" id="cocDropzone" style="padding:1.5rem; background:linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%); border:2px dashed #F59E0B;">
+            <div class="dropzone-icon" style="font-size:2rem; margin-bottom:0.4rem;">📤</div>
+            <div class="dropzone-text" style="font-size:0.95rem; font-weight:600; color:var(--text-main);">
+              Click or drag & drop SBYI COC PDF files to upload
+            </div>
+            <div class="dropzone-subtext" style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">
+              Upload up to 8 PDF files in total (PDF format only). Max 25MB per file.
+            </div>
+            <input type="file" id="cocFilesInput" multiple accept=".pdf,application/pdf" style="display:none;">
+          </div>
+        </div>
+
+        <!-- Guest Read-Only Notice (Guest Only) -->
+        <div id="guestCocNotice" style="display:none; background:#FFFBEB; border:1px solid #FDE68A; border-radius:var(--radius-md); padding:0.9rem 1.25rem; color:#92400E; font-size:0.86rem; margin-bottom:1.25rem;">
+          ℹ️ <strong>Guest Mode:</strong> You can view and download all official SBYI Certificate of Conformity (COC) PDF documents in full. Uploading and modifying documents requires administrator privileges.
+        </div>
+
+        <!-- COC Documents List -->
+        <div>
+          <h4 style="font-size:0.92rem; font-weight:700; color:var(--text-main); margin-bottom:0.75rem; display:flex; align-items:center; justify-content:space-between;">
+            <span>Official SBYI COC Documents</span>
+            <span style="font-size:0.78rem; font-weight:500; color:var(--text-muted);">PDF Documents only</span>
+          </h4>
+          <div id="cocDocumentsContainer" style="display:flex; flex-direction:column; gap:0.75rem;">
+            <!-- Document items dynamically rendered here -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content:space-between;">
+        <button type="button" class="btn btn-amber" id="btnDownloadAllCocDocs" style="background:linear-gradient(135deg, #F59E0B, #D97706); color:#fff; border-color:#D97706;">
+          📥 Download All SBYI COC Files
+        </button>
+        <button type="button" class="btn btn-outline" id="btnCloseCocModalFooter">Close</button>
       </div>
     </div>
   </div>
