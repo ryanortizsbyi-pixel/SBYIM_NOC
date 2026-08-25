@@ -708,11 +708,13 @@ class NOCDatabase {
     const client = this.getSupabaseClient();
     const localRecords = await this._localGetAll();
     const localReqDocs = await this.getRequirementsDocs();
+    const localCocDocs = await this.getCocDocs();
     const localTypes = await this.getCustomTypes();
 
     const stats = {
       recordsSynced: 0,
       reqDocsSynced: 0,
+      cocDocsSynced: 0,
       typesSynced: 0
     };
 
@@ -738,7 +740,18 @@ class NOCDatabase {
       stats.reqDocsSynced = reqRows.length;
     }
 
-    // 3. Sync Custom Types
+    // 3. Sync SBYI COC Documents
+    if (localCocDocs && localCocDocs.length > 0) {
+      const cocRows = localCocDocs.map(d => this.mapCocDocToDb(d));
+      const { error: cocError } = await client
+        .from('sbyi_coc_docs')
+        .upsert(cocRows, { onConflict: 'id' });
+
+      if (cocError) throw new Error(`Failed syncing SBYI COC documents: ${cocError.message}`);
+      stats.cocDocsSynced = cocRows.length;
+    }
+
+    // 4. Sync Custom Types
     if (localTypes && localTypes.length > 0) {
       const typeRows = localTypes.map(t => ({ name: t }));
       const { error: typeError } = await client

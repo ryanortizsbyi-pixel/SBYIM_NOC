@@ -112,3 +112,12 @@ CREATE POLICY "Allow all operations on sbyi_coc_docs"
 DROP POLICY IF EXISTS "Allow all operations on noc_custom_types" ON public.noc_custom_types;
 CREATE POLICY "Allow all operations on noc_custom_types"
     ON public.noc_custom_types FOR ALL TO public USING (true) WITH CHECK (true);
+
+-- ----------------------------------------------------------------------------
+-- 7. Seed Default Types
+-- ----------------------------------------------------------------------------
+INSERT INTO public.noc_custom_types (name)
+VALUES 
+    ('Activity'),
+    ('Activity NOC')
+ON CONFLICT (name) DO NOTHING;

@@ -749,7 +749,8 @@ class NOCApp {
         const updatedList = [...existingDocs, ...newDocs];
         await window.nocDB.saveCocDocs(updatedList);
         await window.nocUI.openCocModal();
-        window.showToast(`Successfully uploaded ${newDocs.length} SBYI COC PDF document(s)!`, 'success');
+        const isDb = window.nocDB.isSupabaseActive();
+        window.showToast(`Successfully uploaded ${newDocs.length} SBYI COC PDF document(s)${isDb ? ' to Supabase database' : ''}!`, 'success');
         cocFilesInput.value = '';
       };
 
@@ -928,7 +929,7 @@ class NOCApp {
 
         try {
           const stats = await window.nocDB.syncLocalToSupabase();
-          window.showToast(`Sync successful! ${stats.recordsSynced} records, ${stats.reqDocsSynced} guidelines pushed to Supabase.`, 'success');
+          window.showToast(`Sync successful! ${stats.recordsSynced} records, ${stats.reqDocsSynced} guidelines, and ${stats.cocDocsSynced || 0} SBYI COC certificates pushed to Supabase.`, 'success');
           await this.refreshData();
         } catch (err) {
           window.showToast('Sync failed: ' + err.message, 'error');

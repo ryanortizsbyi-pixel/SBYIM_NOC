@@ -59,7 +59,23 @@ COMMENT ON TABLE public.noc_requirements_docs IS 'Official NOC guideline and sta
 CREATE INDEX IF NOT EXISTS idx_noc_req_docs_uploaded_at ON public.noc_requirements_docs (uploaded_at DESC);
 
 -- ============================================================================
--- 3. TABLE: noc_custom_types (Dynamic NOC Categories)
+-- 3. TABLE: sbyi_coc_docs (SBYI Certificate of Conformity PDF Documents)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.sbyi_coc_docs (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(100) NOT NULL DEFAULT 'application/pdf',
+    size BIGINT NOT NULL DEFAULT 0,
+    data_url TEXT NOT NULL,
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    uploaded_by VARCHAR(255) NOT NULL DEFAULT 'SBYI Management'
+);
+
+COMMENT ON TABLE public.sbyi_coc_docs IS 'Official SBYI Certificate of Conformity (COC) PDF Documents (Max 8 PDF files enforced)';
+CREATE INDEX IF NOT EXISTS idx_sbyi_coc_docs_uploaded_at ON public.sbyi_coc_docs (uploaded_at DESC);
+
+-- ============================================================================
+-- 4. TABLE: noc_custom_types (Dynamic NOC Categories)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.noc_custom_types (
     id BIGSERIAL PRIMARY KEY,
@@ -70,7 +86,7 @@ CREATE TABLE IF NOT EXISTS public.noc_custom_types (
 COMMENT ON TABLE public.noc_custom_types IS 'Custom NOC classification types added by administrators';
 
 -- ============================================================================
--- 4. AUTOMATIC TIMESTAMP TRIGGER (Updates updated_at on row modification)
+-- 5. AUTOMATIC TIMESTAMP TRIGGER (Updates updated_at on row modification)
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
@@ -87,11 +103,12 @@ CREATE TRIGGER trg_noc_records_updated_at
     EXECUTE FUNCTION public.handle_updated_at();
 
 -- ============================================================================
--- 5. ROW LEVEL SECURITY (RLS) POLICIES
+-- 6. ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
 -- Enable RLS
 ALTER TABLE public.noc_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_requirements_docs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sbyi_coc_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_custom_types ENABLE ROW LEVEL SECURITY;
 
 -- Clean up existing policies if any
@@ -99,6 +116,8 @@ DROP POLICY IF EXISTS "Allow public read on noc_records" ON public.noc_records;
 DROP POLICY IF EXISTS "Allow all operations on noc_records" ON public.noc_records;
 DROP POLICY IF EXISTS "Allow public read on noc_requirements_docs" ON public.noc_requirements_docs;
 DROP POLICY IF EXISTS "Allow all operations on noc_requirements_docs" ON public.noc_requirements_docs;
+DROP POLICY IF EXISTS "Allow public read on sbyi_coc_docs" ON public.sbyi_coc_docs;
+DROP POLICY IF EXISTS "Allow all operations on sbyi_coc_docs" ON public.sbyi_coc_docs;
 DROP POLICY IF EXISTS "Allow public read on noc_custom_types" ON public.noc_custom_types;
 DROP POLICY IF EXISTS "Allow all operations on noc_custom_types" ON public.noc_custom_types;
 
@@ -117,6 +136,13 @@ CREATE POLICY "Allow all operations on noc_requirements_docs"
     USING (true)
     WITH CHECK (true);
 
+CREATE POLICY "Allow all operations on sbyi_coc_docs"
+    ON public.sbyi_coc_docs
+    FOR ALL
+    TO public
+    USING (true)
+    WITH CHECK (true);
+
 CREATE POLICY "Allow all operations on noc_custom_types"
     ON public.noc_custom_types
     FOR ALL
@@ -125,7 +151,7 @@ CREATE POLICY "Allow all operations on noc_custom_types"
     WITH CHECK (true);
 
 -- ============================================================================
--- 6. SEED DATA (Default Standard Types)
+-- 7. SEED DATA (Default Standard Types)
 -- ============================================================================
 INSERT INTO public.noc_custom_types (name)
 VALUES 
