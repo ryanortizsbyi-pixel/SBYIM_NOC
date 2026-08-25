@@ -39,7 +39,7 @@ class UIManager {
 
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    
+
     let icon = 'ℹ️';
     if (type === 'success') icon = '✅';
     if (type === 'error') icon = '⚠️';
@@ -115,16 +115,18 @@ class UIManager {
     const schemaSection = document.getElementById('supabaseSchemaSection');
     const isAdmin = window.nocAuth.isAdmin();
 
+    const canManageDb = window.nocAuth && window.nocAuth.canManageDatabase();
+
     if (credentialsSection) {
-      credentialsSection.style.display = isAdmin ? 'block' : 'none';
+      credentialsSection.style.display = canManageDb ? 'block' : 'none';
     }
 
     if (syncSection) {
-      syncSection.style.display = isAdmin ? 'block' : 'none';
+      syncSection.style.display = canManageDb ? 'block' : 'none';
     }
 
     if (schemaSection) {
-      schemaSection.style.display = isAdmin ? 'block' : 'none';
+      schemaSection.style.display = canManageDb ? 'block' : 'none';
     }
 
     if (badgeEl) {
@@ -203,9 +205,10 @@ class UIManager {
     }
 
     const btnDatabaseConfig = document.getElementById('btnDatabaseConfig');
+    const showDbBadge = window.nocAuth && window.nocAuth.canShowDatabaseBadge();
     if (btnDatabaseConfig) {
-      btnDatabaseConfig.style.display = 'inline-flex';
-      btnDatabaseConfig.disabled = false;
+      btnDatabaseConfig.style.display = showDbBadge ? 'inline-flex' : 'none';
+      btnDatabaseConfig.disabled = !showDbBadge;
     }
   }
 
@@ -363,7 +366,7 @@ class UIManager {
     records.forEach((rec) => {
       const status = window.nocDB.getStatus(rec.dateOfExpiration);
       const docsCount = rec.documents ? rec.documents.length : 0;
-      
+
       let statusBadge = '';
       if (status === 'active') {
         statusBadge = `<span class="badge badge-active">Active</span>`;
@@ -427,7 +430,7 @@ class UIManager {
     records.forEach((rec) => {
       const status = window.nocDB.getStatus(rec.dateOfExpiration);
       const docsCount = rec.documents ? rec.documents.length : 0;
-      
+
       let statusBadge = '';
       if (status === 'active') {
         statusBadge = `<span class="badge badge-active">Active</span>`;
@@ -660,9 +663,9 @@ class UIManager {
     if (!files || files.length === 0) return;
 
     const fileList = Array.from(files);
-    
+
     // Filter for PDF documents only
-    const pdfFiles = fileList.filter(file => 
+    const pdfFiles = fileList.filter(file =>
       file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
     );
 
@@ -769,9 +772,9 @@ class UIManager {
         ` : `
           <div class="doc-gallery">
             ${docs.map((doc, idx) => {
-              const isPDF = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
-              const isGuest = window.nocAuth && window.nocAuth.isGuest();
-              return `
+      const isPDF = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
+      const isGuest = window.nocAuth && window.nocAuth.isGuest();
+      return `
                 <div class="doc-card ${isPDF ? 'pdf' : 'image'}">
                   <div class="doc-card-icon">${isPDF ? '📄' : '🖼️'}</div>
                   <div class="doc-card-name" title="${this.escapeHTML(doc.name)}">${this.escapeHTML(doc.name)}</div>
@@ -789,7 +792,7 @@ class UIManager {
                   </div>
                 </div>
               `;
-            }).join('')}
+    }).join('')}
           </div>
         `}
       </div>
@@ -914,7 +917,7 @@ class UIManager {
     for (let idx = 0; idx < record.documents.length; idx++) {
       const doc = record.documents[idx];
       const isPDF = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
-      
+
       let downloadData = doc.dataUrl;
       let downloadName = `${record.nocNumber}_${doc.name}`;
 
@@ -1365,16 +1368,21 @@ INSERT INTO public.noc_custom_types (name) VALUES ('Activity'), ('Activity NOC')
     }
 
     const btnDatabaseConfig = document.getElementById('btnDatabaseConfig');
+    const showDbBadge = window.nocAuth && window.nocAuth.canShowDatabaseBadge();
     if (btnDatabaseConfig) {
-      btnDatabaseConfig.style.display = 'inline-flex';
-      btnDatabaseConfig.disabled = false;
+      btnDatabaseConfig.style.display = showDbBadge ? 'inline-flex' : 'none';
+      btnDatabaseConfig.disabled = !showDbBadge;
     }
   }
 
   /**
-   * Open the Supabase Database Configuration Modal (Accessible to all users)
+   * Open the Supabase Database Configuration Modal (Admin Only)
    */
   openDatabaseModal() {
+    if (!window.nocAuth || !window.nocAuth.canManageDatabase()) {
+      this.showToast('System Administrator access required for Database Settings.', 'error');
+      return;
+    }
     const modal = document.getElementById('databaseModal');
     const urlInput = document.getElementById('inputSupabaseUrl');
     const keyInput = document.getElementById('inputSupabaseKey');

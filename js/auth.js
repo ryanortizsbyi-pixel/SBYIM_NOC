@@ -145,7 +145,15 @@ class AuthManager {
   }
 
   canManageDatabase() {
-    return true;
+    return this.isAdmin(); // Allowed for both 'admin' and 'SBYIM'
+  }
+
+  canShowDatabaseBadge() {
+    return Boolean(
+      this.currentUser &&
+      this.currentUser.username &&
+      this.currentUser.username.toLowerCase() === 'admin'
+    );
   }
 
   /**

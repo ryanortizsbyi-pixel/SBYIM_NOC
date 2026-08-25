@@ -18,7 +18,7 @@ class NOCApp {
    */
   async init() {
     console.log('Initializing NOC Portal Application...');
-    
+
     // 1. Await database initialization and automatic Supabase cloud connection
     if (window.nocDB && window.nocDB.initPromise) {
       await window.nocDB.initPromise;
@@ -422,7 +422,7 @@ class NOCApp {
 
     if (dropzone && fileInput) {
       dropzone.addEventListener('click', () => fileInput.click());
-      
+
       fileInput.addEventListener('change', (e) => {
         window.nocUI.handleFilesSelected(e.target.files);
         fileInput.value = ''; // reset so same file can be selected again if needed
@@ -528,7 +528,7 @@ class NOCApp {
         for (let idx = 0; idx < docs.length; idx++) {
           const d = docs[idx];
           const isPdf = (d.type && d.type.includes('pdf')) || (d.name && d.name.toLowerCase().endsWith('.pdf'));
-          
+
           let downloadData = d.dataUrl;
           let downloadName = `Requirement_${d.name}`;
 
@@ -820,6 +820,10 @@ class NOCApp {
 
     if (btnDatabaseConfig) {
       btnDatabaseConfig.addEventListener('click', () => {
+        if (!window.nocAuth || !window.nocAuth.isAdmin()) {
+          window.showToast('Administrator privileges required for Database Settings.', 'error');
+          return;
+        }
         window.nocUI.openDatabaseModal();
       });
     }
@@ -972,7 +976,7 @@ class NOCApp {
    */
   async handleFormSubmit() {
     const nocNumber = document.getElementById('nocNumberInput').value.trim();
-    
+
     // Resolve NOC Type from select dropdown or custom input
     const nocTypeSelect = document.getElementById('nocTypeSelect');
     const customTypeContainer = document.getElementById('customTypeContainer');
