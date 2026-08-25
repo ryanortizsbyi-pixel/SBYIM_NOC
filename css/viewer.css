@@ -261,3 +261,120 @@
   font-size: 1.1rem;
   font-weight: 700;
 }
+
+/* ==========================================================================
+   Responsive Styles for Document Viewer
+   ========================================================================== */
+@media (max-width: 768px) {
+  .viewer-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+    padding: 0.6rem 0.85rem;
+  }
+
+  .viewer-file-info {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .viewer-title {
+    max-width: calc(100vw - 120px);
+    font-size: 0.88rem;
+  }
+
+  .viewer-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.35rem;
+    width: 100%;
+  }
+
+  .viewer-btn,
+  .viewer-close-btn {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.78rem;
+    flex: 1 1 auto;
+    justify-content: center;
+    min-height: 36px;
+  }
+
+  .viewer-stage {
+    padding: 0.75rem;
+  }
+
+  .viewer-image {
+    max-width: 96vw;
+    max-height: calc(100vh - 200px);
+  }
+
+  .viewer-pdf-frame {
+    width: 100%;
+    height: 100%;
+    min-height: calc(100vh - 210px);
+  }
+
+  .viewer-nav-btn {
+    width: 36px;
+    height: 36px;
+    background: rgba(15, 23, 42, 0.75);
+  }
+
+  .viewer-nav-btn.prev {
+    left: 0.5rem;
+  }
+
+  .viewer-nav-btn.next {
+    right: 0.5rem;
+  }
+
+  .viewer-footer {
+    padding: 0.5rem 0.85rem;
+    gap: 0.5rem;
+    justify-content: flex-start;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .viewer-thumb-item {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 550px) {
+  .viewer-header {
+    flex-direction: row;
+    padding: 0.35rem 0.75rem;
+  }
+
+  .viewer-controls {
+    width: auto;
+    gap: 0.25rem;
+  }
+
+  .viewer-btn,
+  .viewer-close-btn {
+    padding: 0.25rem 0.45rem;
+    font-size: 0.72rem;
+    min-height: 30px;
+  }
+
+  .viewer-stage {
+    padding: 0.35rem;
+  }
+
+  .viewer-image {
+    max-height: calc(100vh - 100px);
+  }
+
+  .viewer-footer {
+    padding: 0.35rem 0.75rem;
+  }
+
+  .viewer-thumb-item {
+    width: 36px;
+    height: 36px;
+  }
+}

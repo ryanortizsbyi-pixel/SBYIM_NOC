@@ -459,14 +459,14 @@ class NOCApp {
     if (btnQuickAdmin) {
       btnQuickAdmin.addEventListener('click', () => {
         window.nocAuth.switchRole('admin');
-        window.nocUI.closeLoginModal();
+        window.nocUI.closeLoginModal(true);
       });
     }
 
     if (btnQuickGuest) {
       btnQuickGuest.addEventListener('click', () => {
         window.nocAuth.switchRole('guest');
-        window.nocUI.closeLoginModal();
+        window.nocUI.closeLoginModal(true);
       });
     }
 
@@ -478,7 +478,7 @@ class NOCApp {
         const p = document.getElementById('loginPassword').value;
         const res = window.nocAuth.login(u, p);
         if (res.success) {
-          window.nocUI.closeLoginModal();
+          window.nocUI.closeLoginModal(true);
         } else {
           window.showToast(res.message, 'error');
         }

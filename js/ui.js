@@ -195,6 +195,11 @@ class UIManager {
     if (guestPromptText) {
       guestPromptText.textContent = 'Please enter an NOC Number in the search bar above to look up and view certificate details.';
     }
+
+    const closeLoginBtn = document.getElementById('btnCloseLoginModal');
+    if (closeLoginBtn) {
+      closeLoginBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+    }
   }
 
   /**
@@ -855,17 +860,19 @@ class UIManager {
 
     if (form) form.reset();
     if (closeBtn) {
-      // Hide close button on initial gate so user must sign in or select guest
-      closeBtn.style.display = (!window.nocAuth.isLoggedIn() || isMandatory) ? 'none' : 'inline-flex';
+      const isGuest = window.nocAuth && window.nocAuth.isGuest();
+      const isAdmin = window.nocAuth && window.nocAuth.isAdmin();
+      // Hide close button if logged in as guest, mandatory, or not admin
+      closeBtn.style.display = (isGuest || !isAdmin || isMandatory) ? 'none' : 'inline-flex';
     }
     if (modal) modal.classList.add('active');
   }
 
   /**
-   * Close Login Modal (Only allowed if user is authenticated)
+   * Close Login Modal (Only allowed if user is authenticated as Admin or programmatic override)
    */
-  closeLoginModal() {
-    if (!window.nocAuth.isLoggedIn()) return;
+  closeLoginModal(force = false) {
+    if (!force && window.nocAuth && window.nocAuth.isGuest()) return;
     const modal = document.getElementById('loginModal');
     if (modal) modal.classList.remove('active');
   }

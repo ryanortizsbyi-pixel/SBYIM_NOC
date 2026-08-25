@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
   <title>NOC Portal - No Objection Certificate & Document Management System</title>
   <meta name="description" content="Professional NOC Database and Document Management System with multi-file upload, in-app viewer, and role-based access control.">
   
@@ -396,7 +396,7 @@
             NOC Portal Authentication
           </h3>
         </div>
-        <button class="modal-close" id="btnCloseLoginModal" title="Close dialog">&times;</button>
+        <button class="modal-close" id="btnCloseLoginModal" title="Close dialog" style="display:none;">&times;</button>
       </div>
       <div class="modal-body">
         <p style="font-size:0.88rem; color:var(--text-muted); margin-bottom:1.25rem; line-height:1.5;">
@@ -489,8 +489,8 @@
   </div>
 
   <!-- 6. Supabase / PostgreSQL Database Settings Modal -->
-  <div class="modal-backdrop" id="databaseModal">
-    <div class="modal-card" style="max-width:760px;">
+  <div class="modal-overlay modal-backdrop" id="databaseModal">
+    <div class="modal-container modal-card" style="max-width:760px;">
       <div class="modal-header">
         <div>
           <h3 class="modal-title" style="display:flex; align-items:center; gap:0.5rem;">
