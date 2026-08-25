@@ -33,14 +33,9 @@ class NOCApp {
     // 4. Load all records from active database (Supabase Cloud or Local fallback)
     await this.refreshData();
 
-    // 4. Bind event listeners
+    // 5. Bind event listeners & populate type filters
     this.bindEvents();
     this.populateTypeFilterOptions();
-
-    // 5. Present login screen as the first screen if not authenticated
-    if (!window.nocAuth.isLoggedIn()) {
-      window.nocUI.openLoginModal(true);
-    }
   }
 
   /**

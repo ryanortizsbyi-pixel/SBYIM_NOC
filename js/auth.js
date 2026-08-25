@@ -32,7 +32,7 @@ class AuthManager {
   }
 
   /**
-   * Load saved session from sessionStorage (starts as null on fresh browser open)
+   * Load saved session from sessionStorage, or default to Guest user on initial startup
    */
   loadUser() {
     try {
@@ -43,8 +43,20 @@ class AuthManager {
     } catch (e) {
       console.warn('Could not read auth from storage', e);
     }
-    // Starts unauthenticated so login form is the first screen
-    return null;
+    // Default: Authenticate automatically as Guest when application starts
+    const guestUser = {
+      username: this.systemUsers.guest.username,
+      role: this.systemUsers.guest.role,
+      displayName: this.systemUsers.guest.displayName,
+      email: this.systemUsers.guest.email,
+      loggedInAt: new Date().toISOString()
+    };
+    try {
+      sessionStorage.setItem(this.STORAGE_KEY, JSON.stringify(guestUser));
+    } catch (e) {
+      console.warn('Could not persist initial guest auth to storage', e);
+    }
+    return guestUser;
   }
 
   /**
@@ -85,11 +97,18 @@ class AuthManager {
   }
 
   /**
-   * Logout current user and clear session
+   * Logout current user and reset back to Guest role
    */
   logout() {
-    this.currentUser = null;
-    sessionStorage.removeItem(this.STORAGE_KEY);
+    const guestUser = {
+      username: this.systemUsers.guest.username,
+      role: this.systemUsers.guest.role,
+      displayName: this.systemUsers.guest.displayName,
+      email: this.systemUsers.guest.email,
+      loggedInAt: new Date().toISOString()
+    };
+    this.currentUser = guestUser;
+    sessionStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentUser));
     this.triggerAuthChange();
   }
 
