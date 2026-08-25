@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS public.noc_requirements_docs (
 CREATE INDEX IF NOT EXISTS idx_noc_req_docs_uploaded_at ON public.noc_requirements_docs (uploaded_at DESC);
 
 -- ----------------------------------------------------------------------------
--- 3. Table: sbyi_coc_docs (SBYI Certificate of Conformity PDF Documents)
+-- 3. Table: sbyi_coc_docs (SBYI Code of Conduct (COC) PDF Documents)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.sbyi_coc_docs (
     id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,

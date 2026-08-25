@@ -536,7 +536,7 @@ class NOCDatabase {
   }
 
   // ==========================================================================
-  // SBYI COC (CERTIFICATE OF CONFORMITY) DOCUMENTS (Max 8 PDF Documents)
+  // SBYI COC (CODE OF CONDUCT) DOCUMENTS (Max 8 PDF Documents)
   // ==========================================================================
 
   /**

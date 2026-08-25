@@ -1116,7 +1116,7 @@ class UIManager {
           <div style="text-align:center; padding:2rem; background:var(--bg-subtle); border-radius:var(--radius-md); color:var(--text-muted);">
             <div style="font-size:2rem; margin-bottom:0.5rem;">📜</div>
             <p style="font-size:0.9rem;">No SBYI COC documents uploaded yet.</p>
-            ${isAdmin ? '<p style="font-size:0.8rem; margin-top:0.25rem;">Use the upload area above to attach up to 8 PDF certificates.</p>' : ''}
+            ${isAdmin ? '<p style="font-size:0.8rem; margin-top:0.25rem;">Use the upload area above to attach up to 8 PDF documents.</p>' : ''}
           </div>
         `;
       } else {
@@ -1158,7 +1158,7 @@ class UIManager {
         container.querySelectorAll('[data-preview-coc-idx]').forEach(btn => {
           btn.addEventListener('click', () => {
             const idx = parseInt(btn.getAttribute('data-preview-coc-idx'), 10);
-            window.docViewer.open(docs, idx, 'SBYI Certificate of Conformity', { allowFullPages: true });
+            window.docViewer.open(docs, idx, 'SBYI Code of Conduct (COC)', { allowFullPages: true });
           });
         });
 
@@ -1245,7 +1245,7 @@ CREATE TABLE IF NOT EXISTS public.noc_requirements_docs (
 
 CREATE INDEX IF NOT EXISTS idx_noc_req_docs_uploaded_at ON public.noc_requirements_docs (uploaded_at DESC);
 
--- 3. TABLE: sbyi_coc_docs (SBYI Certificate of Conformity PDF Documents)
+-- 3. TABLE: sbyi_coc_docs (SBYI Code of Conduct (COC) PDF Documents)
 CREATE TABLE IF NOT EXISTS public.sbyi_coc_docs (
     id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     name VARCHAR(255) NOT NULL,

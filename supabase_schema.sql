@@ -59,7 +59,7 @@ COMMENT ON TABLE public.noc_requirements_docs IS 'Official NOC guideline and sta
 CREATE INDEX IF NOT EXISTS idx_noc_req_docs_uploaded_at ON public.noc_requirements_docs (uploaded_at DESC);
 
 -- ============================================================================
--- 3. TABLE: sbyi_coc_docs (SBYI Certificate of Conformity PDF Documents)
+-- 3. TABLE: sbyi_coc_docs (SBYI Code of Conduct (COC) PDF Documents)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.sbyi_coc_docs (
     id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS public.sbyi_coc_docs (
     uploaded_by VARCHAR(255) NOT NULL DEFAULT 'SBYI Management'
 );
 
-COMMENT ON TABLE public.sbyi_coc_docs IS 'Official SBYI Certificate of Conformity (COC) PDF Documents (Max 8 PDF files enforced)';
+COMMENT ON TABLE public.sbyi_coc_docs IS 'Official SBYI Code of Conduct (COC) PDF Documents (Max 8 PDF files enforced)';
 CREATE INDEX IF NOT EXISTS idx_sbyi_coc_docs_uploaded_at ON public.sbyi_coc_docs (uploaded_at DESC);
 
 -- ============================================================================

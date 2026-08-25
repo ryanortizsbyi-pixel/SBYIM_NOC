@@ -354,7 +354,7 @@ const DEFAULT_NOC_REQUIREMENTS_DOCS = [
   }
 ];
 
-// Default SBYI COC (Certificate of Conformity) Documents (Max 8 PDF files)
+// Default SBYI COC (Code of Conduct) Documents (Max 8 PDF files)
 const DEFAULT_SBYI_COC_DOCS = [
   {
     id: 'coc_doc_01',
@@ -370,7 +370,7 @@ const DEFAULT_SBYI_COC_DOCS = [
     name: 'SBYI_COC_Environmental_Safety.pdf',
     type: 'application/pdf',
     size: 312500,
-    dataUrl: createSamplePDFDataURL('Sir Bani Yas Island Environmental Safety Certificate of Conformity', 'COC-SBYI-2026-E02'),
+    dataUrl: createSamplePDFDataURL('Sir Bani Yas Island Environmental Safety Code of Conduct', 'COC-SBYI-2026-E02'),
     uploadedAt: '2026-03-01T11:20:00.000Z',
     uploadedBy: 'SBYI Management'
   },
