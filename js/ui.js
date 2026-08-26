@@ -987,14 +987,14 @@ class UIManager {
           const badgeLabel = isPdf ? 'PDF' : (isImg ? 'IMG' : (isDocx ? 'DOCX' : (isDoc ? 'DOC' : 'FILE')));
 
           return `
-            <div style="background:var(--bg-surface); border:1px solid var(--border-light); border-radius:var(--radius-md); padding:0.9rem 1.15rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; box-shadow:var(--shadow-sm); transition:all var(--transition-fast);">
-              <div style="display:flex; align-items:center; gap:0.85rem; overflow:hidden;">
-                <span class="file-item-badge ${badgeClass}" style="flex-shrink:0;">${badgeLabel}</span>
-                <div style="overflow:hidden;">
-                  <div style="font-size:0.9rem; font-weight:600; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${this.escapeHTML(doc.name)}">
+            <div class="doc-list-item">
+              <div class="doc-list-item-info">
+                <span class="file-item-badge ${badgeClass}">${badgeLabel}</span>
+                <div class="doc-list-item-text">
+                  <div class="doc-list-item-title" title="${this.escapeHTML(doc.name)}">
                     ${this.escapeHTML(doc.name)}
                   </div>
-                  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; font-size:0.75rem; color:var(--text-muted); margin-top:0.15rem;">
+                  <div class="doc-list-item-meta">
                     <span>${this.formatBytes(doc.size || 0)}</span>
                     <span>•</span>
                     <span>Uploaded: ${this.formatDate(doc.uploadedAt || new Date().toISOString())}</span>
@@ -1002,17 +1002,17 @@ class UIManager {
                 </div>
               </div>
 
-              <div style="display:flex; align-items:center; gap:0.5rem; flex-shrink:0;">
+              <div class="doc-list-item-actions">
                 ${canPreview ? `
-                  <button type="button" class="btn btn-outline-primary" style="padding:0.4rem 0.75rem; font-size:0.8rem;" data-preview-req-idx="${idx}" title="Preview Document">
+                  <button type="button" class="btn btn-outline-primary btn-action-view" data-preview-req-idx="${idx}" title="Preview Document">
                     👁️ View
                   </button>
                 ` : ''}
-                <button type="button" class="btn btn-outline" style="padding:0.4rem 0.75rem; font-size:0.8rem;" data-download-req-idx="${idx}" title="Download File">
+                <button type="button" class="btn btn-outline btn-action-download" data-download-req-idx="${idx}" title="Download File">
                   📥 Download
                 </button>
                 ${isAdmin ? `
-                  <button type="button" class="btn btn-danger" style="padding:0.4rem 0.65rem; font-size:0.8rem;" data-delete-req-id="${doc.id}" title="Delete Document">
+                  <button type="button" class="btn btn-danger btn-action-delete" data-delete-req-id="${doc.id}" title="Delete Document">
                     🗑️
                   </button>
                 ` : ''}
@@ -1123,14 +1123,14 @@ class UIManager {
       } else {
         container.innerHTML = docs.map((doc, idx) => {
           return `
-            <div style="background:var(--bg-surface); border:1px solid var(--border-light); border-radius:var(--radius-md); padding:0.9rem 1.15rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; box-shadow:var(--shadow-sm); transition:all var(--transition-fast);">
-              <div style="display:flex; align-items:center; gap:0.85rem; overflow:hidden;">
-                <span class="file-item-badge pdf" style="flex-shrink:0;">PDF</span>
-                <div style="overflow:hidden;">
-                  <div style="font-size:0.9rem; font-weight:600; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${this.escapeHTML(doc.name)}">
+            <div class="doc-list-item">
+              <div class="doc-list-item-info">
+                <span class="file-item-badge pdf">PDF</span>
+                <div class="doc-list-item-text">
+                  <div class="doc-list-item-title" title="${this.escapeHTML(doc.name)}">
                     ${this.escapeHTML(doc.name)}
                   </div>
-                  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; font-size:0.75rem; color:var(--text-muted); margin-top:0.15rem;">
+                  <div class="doc-list-item-meta">
                     <span>${this.formatBytes(doc.size || 0)}</span>
                     <span>•</span>
                     <span>Uploaded: ${this.formatDate(doc.uploadedAt || new Date().toISOString())}</span>
@@ -1138,15 +1138,15 @@ class UIManager {
                 </div>
               </div>
 
-              <div style="display:flex; align-items:center; gap:0.5rem; flex-shrink:0;">
-                <button type="button" class="btn btn-outline-primary" style="padding:0.4rem 0.75rem; font-size:0.8rem;" data-preview-coc-idx="${idx}" title="Preview Complete Document">
+              <div class="doc-list-item-actions">
+                <button type="button" class="btn btn-outline-primary btn-action-view" data-preview-coc-idx="${idx}" title="Preview Complete Document">
                   👁️ View
                 </button>
-                <button type="button" class="btn btn-outline" style="padding:0.4rem 0.75rem; font-size:0.8rem;" data-download-coc-idx="${idx}" title="Download File">
+                <button type="button" class="btn btn-outline btn-action-download" data-download-coc-idx="${idx}" title="Download File">
                   📥 Download
                 </button>
                 ${isAdmin ? `
-                  <button type="button" class="btn btn-danger" style="padding:0.4rem 0.65rem; font-size:0.8rem;" data-delete-coc-id="${doc.id}" title="Delete Document">
+                  <button type="button" class="btn btn-danger btn-action-delete" data-delete-coc-id="${doc.id}" title="Delete Document">
                     🗑️
                   </button>
                 ` : ''}

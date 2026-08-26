@@ -276,6 +276,9 @@
     align-items: stretch;
     gap: 0.6rem;
     padding: 0.6rem 0.85rem;
+    padding-top: max(0.6rem, env(safe-area-inset-top));
+    padding-left: max(0.85rem, env(safe-area-inset-left));
+    padding-right: max(0.85rem, env(safe-area-inset-right));
   }
 
   .viewer-file-info {
@@ -299,11 +302,19 @@
 
   .viewer-btn,
   .viewer-close-btn {
-    padding: 0.4rem 0.6rem;
-    font-size: 0.78rem;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.8rem;
     flex: 1 1 auto;
     justify-content: center;
-    min-height: 36px;
+    min-height: 38px;
+    box-sizing: border-box;
+  }
+
+  .viewer-btn:active,
+  .viewer-close-btn:active,
+  .viewer-nav-btn:active,
+  .viewer-thumb-item:active {
+    transform: scale(0.96);
   }
 
   .viewer-stage {
@@ -322,9 +333,9 @@
   }
 
   .viewer-nav-btn {
-    width: 36px;
-    height: 36px;
-    background: rgba(15, 23, 42, 0.75);
+    width: 40px;
+    height: 40px;
+    background: rgba(15, 23, 42, 0.85);
   }
 
   .viewer-nav-btn.prev {
@@ -337,14 +348,35 @@
 
   .viewer-footer {
     padding: 0.5rem 0.85rem;
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
     gap: 0.5rem;
     justify-content: flex-start;
     -webkit-overflow-scrolling: touch;
   }
 
   .viewer-thumb-item {
-    width: 44px;
-    height: 44px;
+    width: 46px;
+    height: 46px;
+  }
+}
+
+@media (max-width: 480px) {
+  .viewer-controls {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr) 1.2fr 1fr;
+    gap: 0.3rem;
+  }
+
+  .viewer-btn,
+  .viewer-close-btn {
+    padding: 0.35rem 0.45rem;
+    font-size: 0.75rem;
+    min-height: 36px;
+  }
+
+  .viewer-title {
+    max-width: calc(100vw - 90px);
+    font-size: 0.84rem;
   }
 }
 
@@ -352,9 +384,11 @@
   .viewer-header {
     flex-direction: row;
     padding: 0.35rem 0.75rem;
+    padding-top: max(0.35rem, env(safe-area-inset-top));
   }
 
   .viewer-controls {
+    display: flex;
     width: auto;
     gap: 0.25rem;
   }
@@ -363,7 +397,7 @@
   .viewer-close-btn {
     padding: 0.25rem 0.45rem;
     font-size: 0.72rem;
-    min-height: 30px;
+    min-height: 32px;
   }
 
   .viewer-stage {
@@ -374,8 +408,13 @@
     max-height: calc(100vh - 100px);
   }
 
+  .viewer-pdf-frame {
+    min-height: calc(100vh - 100px);
+  }
+
   .viewer-footer {
     padding: 0.35rem 0.75rem;
+    padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
   }
 
   .viewer-thumb-item {
