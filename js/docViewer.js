@@ -384,6 +384,87 @@ class DocumentViewer {
   }
 
   /**
+   * Render all pages of a PDF onto high-DPI Canvas elements for universal multi-page viewing
+   * across Mobile, Tablet, Laptop, and Desktop screens.
+   */
+  async renderPdfDocument(pdfBytes, isRestrictedGuest = false) {
+    if (!pdfBytes) return false;
+    await this.ensurePdfJsLoaded();
+
+    if (!window.pdfjsLib) {
+      console.warn('PDF.js library is not available.');
+      return false;
+    }
+
+    // Show loading spinner
+    this.stage.innerHTML = `
+      <div class="pdf-loading-spinner">
+        <div class="pdf-spinner-circle"></div>
+        <div>Rendering document pages...</div>
+      </div>
+    `;
+
+    try {
+      const dataCopy = pdfBytes.slice ? pdfBytes.slice(0) : new Uint8Array(pdfBytes);
+      const loadingTask = window.pdfjsLib.getDocument({ data: dataCopy });
+      const pdf = await loadingTask.promise;
+
+      const totalPdfPages = pdf.numPages;
+      const numPagesToRender = isRestrictedGuest ? 1 : totalPdfPages;
+
+      // Update header title with total page count info
+      const doc = this.currentDocs[this.currentIndex];
+      let titleText = `${doc.name} (${this.currentIndex + 1}/${this.currentDocs.length}) • ${totalPdfPages} ${totalPdfPages === 1 ? 'Page' : 'Pages'}`;
+      if (isRestrictedGuest) {
+        titleText += ` [Page 1 Only - Guest Mode]`;
+      }
+      if (this.titleEl) this.titleEl.textContent = titleText;
+
+      this.stage.innerHTML = '';
+
+      const scrollWrapper = document.createElement('div');
+      scrollWrapper.className = 'pdf-pages-scroll-wrapper';
+      scrollWrapper.id = 'viewerImageWrapper';
+
+      const dpr = Math.min(2.5, Math.max(1.5, window.devicePixelRatio || 1.5));
+
+      for (let pageNum = 1; pageNum <= numPagesToRender; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: dpr });
+
+        const pageWrapper = document.createElement('div');
+        pageWrapper.className = 'pdf-page-wrapper';
+        pageWrapper.id = `pdfPageWrapper_${pageNum}`;
+
+        const pageBadge = document.createElement('div');
+        pageBadge.className = 'pdf-page-badge';
+        pageBadge.textContent = isRestrictedGuest
+          ? `Page 1 of ${totalPdfPages} (Guest Preview)`
+          : `Page ${pageNum} of ${totalPdfPages}`;
+
+        const canvas = document.createElement('canvas');
+        canvas.className = 'pdf-page-canvas';
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        const context = canvas.getContext('2d');
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        pageWrapper.appendChild(pageBadge);
+        pageWrapper.appendChild(canvas);
+        scrollWrapper.appendChild(pageWrapper);
+      }
+
+      this.stage.appendChild(scrollWrapper);
+      this.applyImageTransform();
+      return true;
+    } catch (err) {
+      console.warn('PDF.js full document rendering error:', err);
+      return false;
+    }
+  }
+
+  /**
    * Render the active document in the stage.
    */
   async renderCurrentDocument() {
@@ -407,13 +488,11 @@ class DocumentViewer {
       this.badgeEl.textContent = isPDF ? (isRestrictedGuest ? 'PDF Page 1' : 'PDF Document') : 'Image';
     }
 
-    // Toggle controls visibility based on format
-    // For Guest viewing restricted PDF, enable zoom & rotate controls for the Page 1 preview
-    const showZoomRotate = !isPDF || isRestrictedGuest;
-    if (this.zoomInBtn) this.zoomInBtn.style.display = showZoomRotate ? 'inline-flex' : 'none';
-    if (this.zoomOutBtn) this.zoomOutBtn.style.display = showZoomRotate ? 'inline-flex' : 'none';
-    if (this.rotateBtn) this.rotateBtn.style.display = showZoomRotate ? 'inline-flex' : 'none';
-    if (this.resetBtn) this.resetBtn.style.display = showZoomRotate ? 'inline-flex' : 'none';
+    // Enable zoom, rotate, and reset controls for both PDFs and images
+    if (this.zoomInBtn) this.zoomInBtn.style.display = 'inline-flex';
+    if (this.zoomOutBtn) this.zoomOutBtn.style.display = 'inline-flex';
+    if (this.rotateBtn) this.rotateBtn.style.display = 'inline-flex';
+    if (this.resetBtn) this.resetBtn.style.display = 'inline-flex';
 
     // Update Nav buttons
     if (this.prevBtn) this.prevBtn.disabled = this.currentIndex === 0;
@@ -422,61 +501,20 @@ class DocumentViewer {
     // Render Content
     this.stage.innerHTML = '';
 
-    if (isPDF && !isRestrictedGuest) {
-      // Full Interactive multi-page PDF iframe
-      const iframe = document.createElement('iframe');
-      iframe.className = 'viewer-pdf-frame';
-      iframe.src = doc.dataUrl;
-      iframe.title = doc.name;
-      this.stage.appendChild(iframe);
-    } else if (isPDF && isRestrictedGuest) {
-      // Guest: Render Page 1 ONLY on high-DPI canvas/image stage
-      const imgWrapper = document.createElement('div');
-      imgWrapper.className = 'viewer-image-wrapper';
-      imgWrapper.id = 'viewerImageWrapper';
+    if (isPDF) {
+      const pdfBytes = this.getPdfBytes(doc.dataUrl);
+      const rendered = await this.renderPdfDocument(pdfBytes, isRestrictedGuest);
 
-      const loadingNotice = document.createElement('div');
-      loadingNotice.style.cssText = 'color:#fff; text-align:center; padding:2rem; font-size:0.95rem;';
-      loadingNotice.innerHTML = 'Rendering Page 1 Preview...';
-      this.stage.appendChild(loadingNotice);
-
-      try {
-        const pdfBytes = this.getPdfBytes(doc.dataUrl);
-        const canvas = await this.renderPdfPage1ToCanvas(pdfBytes, 2.0);
-
+      if (!rendered) {
+        // Fallback to standalone single-page PDF in iframe if canvas rendering fails
         this.stage.innerHTML = '';
-        if (canvas) {
-          canvas.className = 'viewer-image';
-          canvas.style.boxShadow = '0 10px 30px rgba(0, 0, 0, 0.6)';
-          canvas.style.borderRadius = '4px';
-          canvas.style.maxWidth = '90vw';
-          canvas.style.maxHeight = '80vh';
-          canvas.style.objectFit = 'contain';
-          canvas.style.background = '#FFFFFF';
-          imgWrapper.appendChild(canvas);
-          this.stage.appendChild(imgWrapper);
-          this.applyImageTransform();
-        } else {
-          // Fallback to standalone single-page PDF in iframe
-          if (!doc._guestPage1DataUrl) {
-            doc._guestPage1DataUrl = await this.getFirstPagePdfDataUrl(doc.dataUrl);
-          }
-          const iframe = document.createElement('iframe');
-          iframe.className = 'viewer-pdf-frame';
-          iframe.src = doc._guestPage1DataUrl;
-          iframe.title = `${doc.name} (Page 1)`;
-          this.stage.appendChild(iframe);
-        }
-      } catch (err) {
-        console.warn('Guest page 1 rendering error:', err);
-        if (!doc._guestPage1DataUrl) {
+        if (isRestrictedGuest && !doc._guestPage1DataUrl) {
           doc._guestPage1DataUrl = await this.getFirstPagePdfDataUrl(doc.dataUrl);
         }
-        this.stage.innerHTML = '';
         const iframe = document.createElement('iframe');
         iframe.className = 'viewer-pdf-frame';
-        iframe.src = doc._guestPage1DataUrl;
-        iframe.title = `${doc.name} (Page 1)`;
+        iframe.src = isRestrictedGuest ? (doc._guestPage1DataUrl || doc.dataUrl) : doc.dataUrl;
+        iframe.title = doc.name;
         this.stage.appendChild(iframe);
       }
     } else {
