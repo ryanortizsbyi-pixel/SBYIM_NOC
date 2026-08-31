@@ -9,8 +9,8 @@ class SupabaseConfigManager {
     this.STORAGE_KEY_KEY = 'noc_supabase_anon_key';
     
     // Default pre-configured Supabase Project URL & Anon Public API Key
-    this.defaultUrl = 'https://qstyziuwxklbvcadqrho.supabase.co';
-    this.defaultAnonKey = 'sb_publishable_iqh_iXjgVJAqL6BtMJsm_g_Oe43JJFE';
+    this.defaultUrl = 'https://xycrdbcaggdthcyngkyn.supabase.co';
+    this.defaultAnonKey = 'sb_publishable_oq4jrLK3juO6RNSkniKJ9Q_9b08hvmc';
     
     this.client = null;
     this.isConnected = false;
@@ -26,10 +26,10 @@ class SupabaseConfigManager {
     try {
       const stored = localStorage.getItem(this.STORAGE_KEY_URL);
       if (stored && stored.trim()) {
-        if (stored.includes('qstyziuwxklvcadqrho')) {
-          const corrected = stored.replace('qstyziuwxklvcadqrho', 'qstyziuwxklbvcadqrho');
-          localStorage.setItem(this.STORAGE_KEY_URL, corrected);
-          return corrected;
+        // Automatically migrate legacy project URLs to the new Supabase server location
+        if (stored.includes('qstyziuwxklvcadqrho') || stored.includes('qstyziuwxklbvcadqrho')) {
+          localStorage.setItem(this.STORAGE_KEY_URL, this.defaultUrl);
+          return this.defaultUrl;
         }
         return stored.trim();
       }
@@ -45,7 +45,14 @@ class SupabaseConfigManager {
   getAnonKey() {
     try {
       const stored = localStorage.getItem(this.STORAGE_KEY_KEY);
-      if (stored && stored.trim()) return stored.trim();
+      if (stored && stored.trim()) {
+        // Automatically migrate legacy API keys to the new Supabase API key
+        if (stored.includes('iqh_iXjgVJAqL6BtMJsm_g_Oe43JJFE')) {
+          localStorage.setItem(this.STORAGE_KEY_KEY, this.defaultAnonKey);
+          return this.defaultAnonKey;
+        }
+        return stored.trim();
+      }
     } catch (e) {
       console.warn('Could not read Supabase Anon Key from localStorage', e);
     }
