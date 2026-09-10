@@ -134,7 +134,8 @@ const INITIAL_NOC_SEED_DATA = [
     nocType: 'Activity NOC',
     dateOfIssuance: '2026-01-15',
     dateOfExpiration: '2026-12-31',
-    issuedTo: 'Apex Engineering & Infrastructure Ltd.',
+    issuedTo: 'APEX ENGINEERING & INFRASTRUCTURE LTD.',
+    companyCode: 'APEX-01',
     client: 'Municipal Urban Development Authority',
     description: 'Construction authorization for multi-story commercial tower including structural foundation, deep basement excavation, and fire life safety system installation.',
     documents: [
@@ -172,7 +173,8 @@ const INITIAL_NOC_SEED_DATA = [
     nocType: 'Activity',
     dateOfIssuance: '2026-07-01',
     dateOfExpiration: '2026-09-10', // Expiring Soon (< 30 days from Aug 24, 2026)
-    issuedTo: 'Trans-Gulf Contracting Co.',
+    issuedTo: 'TRANS-GULF CONTRACTING CO.',
+    companyCode: 'TG-2026',
     client: 'National Highway Authority',
     description: 'Temporary road cutting permit for underground high-voltage 33kV cable laying across Sector 4B boulevard with complete traffic detour management.',
     documents: [
@@ -202,7 +204,8 @@ const INITIAL_NOC_SEED_DATA = [
     nocType: 'Activity NOC',
     dateOfIssuance: '2025-05-10',
     dateOfExpiration: '2026-05-10', // Expired
-    issuedTo: 'Pioneer Demolition Specialists LLC',
+    issuedTo: 'PIONEER DEMOLITION SPECIALISTS LLC',
+    companyCode: '',
     client: 'Vertex Commercial Properties',
     description: 'Controlled mechanical demolition of obsolete two-story industrial warehouse structure, hazardous asbestos abatement, and site debris removal.',
     documents: [
@@ -232,7 +235,8 @@ const INITIAL_NOC_SEED_DATA = [
     nocType: 'Activity',
     dateOfIssuance: '2026-03-20',
     dateOfExpiration: '2027-03-20',
-    issuedTo: 'Skyline Electromechanical Services',
+    issuedTo: 'SKYLINE ELECTROMECHANICAL SERVICES',
+    companyCode: 'SKY-04',
     client: 'State Water & Power Dept.',
     description: 'Installation and commissioning of 1500kVA step-down compact substation transformer unit and feeder panel routing for residential district.',
     documents: [
@@ -262,7 +266,8 @@ const INITIAL_NOC_SEED_DATA = [
     nocType: 'Activity NOC',
     dateOfIssuance: '2026-06-01',
     dateOfExpiration: '2026-11-30',
-    issuedTo: 'Metropolitan Builders Corp.',
+    issuedTo: 'METROPOLITAN BUILDERS CORP.',
+    companyCode: '',
     client: 'Grand Plaza Shopping Mall',
     description: 'Internal architectural fit-out, HVAC duct installation, fire suppression sprinkler routing, and ceiling framing for retail store Units 104-106.',
     documents: [
@@ -301,10 +306,9 @@ All contractors, developers, and project owners applying for a No Objection Cert
   5. Utility Grid (Water, Power, Drainage, Telecom) Integration Approvals.\\par
   6. Road Cutting / Excavation Traffic Detour Management Plan.\\par
 \\par
-\\cf1\\b B. Digital Document Guidelines:\\b0\\cf3\\par
-  - Attachments must be clear and legible in PDF, Word (DOC/DOCX), or high-resolution Image format.\\par
-  - Maximum limit of 5 supporting documents per NOC record in the portal.\\par
-  - File sizes must not exceed 25MB per document.\\par
+\\cf1\\b B. Submission & Quality Standards:\\b0\\cf3\\par
+  - Attachments must be high-resolution, clear, and legible in certified PDF or CAD format.\\par
+  - All drawings and engineering plans must bear official consultant engineering seals.\\par
 \\par
 \\pard\\qc\\cf4\\fs18 *** OFFICIAL REGULATORY COMPLIANCE DOCUMENT ***\\par
 }`;

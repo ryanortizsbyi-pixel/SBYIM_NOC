@@ -106,7 +106,8 @@ class NOCDatabase {
       noc_number: (rec.nocNumber || '').trim(),
       noc_type: rec.nocType || 'Activity',
       client: (rec.client || '').trim(),
-      issued_to: (rec.issuedTo || '').trim(),
+      issued_to: (rec.issuedTo || '').trim().toUpperCase(),
+      company_code: (rec.companyCode || '').trim(),
       date_of_issuance: rec.dateOfIssuance,
       date_of_expiration: rec.dateOfExpiration,
       description: rec.description || '',
@@ -137,7 +138,8 @@ class NOCDatabase {
       nocNumber: row.noc_number || row.nocNumber,
       nocType: row.noc_type || row.nocType || 'Activity',
       client: row.client || '',
-      issuedTo: row.issued_to || row.issuedTo || '',
+      issuedTo: (row.issued_to || row.issuedTo || '').trim().toUpperCase(),
+      companyCode: row.company_code || row.companyCode || '',
       dateOfIssuance: row.date_of_issuance || row.dateOfIssuance,
       dateOfExpiration: row.date_of_expiration || row.dateOfExpiration,
       description: row.description || '',
@@ -204,6 +206,62 @@ class NOCDatabase {
       dataUrl: row.data_url || row.dataUrl,
       uploadedAt: row.uploaded_at || row.uploadedAt,
       uploadedBy: row.uploaded_by || row.uploadedBy || 'SBYI Management'
+    };
+  }
+
+  /**
+   * Maps AI Document frontend model to PostgreSQL row
+   */
+  mapAiDocToDb(doc) {
+    return {
+      id: doc.id || 'ai_doc_' + Date.now(),
+      name: doc.name || 'Untitled Document',
+      type: doc.type || 'application/pdf',
+      size: Number(doc.size || 0),
+      data_url: doc.dataUrl || doc.data_url || '',
+      uploaded_at: doc.uploadedAt || doc.uploaded_at || new Date().toISOString(),
+      uploaded_by: doc.uploadedBy || doc.uploaded_by || 'System Administrator'
+    };
+  }
+
+  /**
+   * Maps PostgreSQL row to frontend AI Document model
+   */
+  mapDbToAiDoc(row) {
+    return {
+      id: String(row.id),
+      name: row.name,
+      type: row.type || 'application/pdf',
+      size: Number(row.size || 0),
+      dataUrl: row.data_url || row.dataUrl,
+      uploadedAt: row.uploaded_at || row.uploadedAt,
+      uploadedBy: row.uploaded_by || row.uploadedBy || 'System Administrator'
+    };
+  }
+
+  /**
+   * Maps User frontend model to PostgreSQL row
+   */
+  mapUserToDb(user) {
+    return {
+      username: user.username,
+      password: user.password,
+      role: user.role || 'guest',
+      display_name: user.displayName || user.display_name || user.username,
+      email: user.email || ''
+    };
+  }
+
+  /**
+   * Maps PostgreSQL row to frontend User model
+   */
+  mapDbToUser(row) {
+    return {
+      username: row.username,
+      password: row.password,
+      role: row.role || 'guest',
+      displayName: row.display_name || row.displayName || row.username,
+      email: row.email || ''
     };
   }
 
@@ -514,6 +572,14 @@ class NOCDatabase {
     } catch (e) {
       console.warn('Could not write requirements to localStorage', e);
     }
+
+    // Auto-sync AI Knowledge Base
+    if (window.sbyimKnowledgeBase) {
+      window.sbyimKnowledgeBase.syncKnowledgeBase().then(() => {
+        if (window.sbyimAIUI) window.sbyimAIUI.updateKnowledgeStatusBadge();
+      }).catch(() => {});
+    }
+
     return clamped;
   }
 
@@ -602,6 +668,14 @@ class NOCDatabase {
     } catch (e) {
       console.warn('Could not write COC docs to localStorage', e);
     }
+
+    // Auto-sync AI Knowledge Base
+    if (window.sbyimKnowledgeBase) {
+      window.sbyimKnowledgeBase.syncKnowledgeBase().then(() => {
+        if (window.sbyimAIUI) window.sbyimAIUI.updateKnowledgeStatusBadge();
+      }).catch(() => {});
+    }
+
     return clamped;
   }
 
@@ -621,6 +695,104 @@ class NOCDatabase {
     const docs = await this.getCocDocs();
     const filtered = docs.filter(d => d.id !== id);
     return await this.saveCocDocs(filtered);
+  }
+
+  // ==========================================================================
+  // AI DOCUMENTS REPOSITORY (DOC, DOCX, or PDF Files Only)
+  // ==========================================================================
+
+  /**
+   * Get all stored AI Knowledge Base Documents (DOC, DOCX, or PDF)
+   */
+  async getAiDocs() {
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { data, error } = await client
+          .from('ai_documents')
+          .select('*')
+          .order('uploaded_at', { ascending: false });
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          return data.map(row => this.mapDbToAiDoc(row));
+        }
+      } catch (err) {
+        console.warn('Supabase getAiDocs failed, reading local:', err.message);
+      }
+    }
+
+    // Fallback to localStorage
+    try {
+      const stored = localStorage.getItem('ai_documents_v1');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.warn('Could not read AI docs from localStorage', e);
+    }
+    return [];
+  }
+
+  /**
+   * Save AI Documents list (Enforcing DOC, DOCX, or PDF files)
+   */
+  async saveAiDocs(docs) {
+    const validDocs = (docs || []).filter(d => {
+      const name = (d.name || '').toLowerCase();
+      const type = (d.type || '').toLowerCase();
+      return name.endsWith('.pdf') || name.endsWith('.docx') || name.endsWith('.doc') ||
+             type.includes('pdf') || type.includes('wordprocessingml') || type.includes('msword');
+    });
+
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const dbRows = validDocs.map(d => this.mapAiDocToDb(d));
+        
+        // Clear old and insert new
+        await client.from('ai_documents').delete().neq('id', '___none___');
+        if (dbRows.length > 0) {
+          const { error } = await client.from('ai_documents').insert(dbRows);
+          if (error) throw error;
+        }
+      } catch (err) {
+        console.warn('Supabase saveAiDocs failed, saving locally:', err.message);
+      }
+    }
+
+    try {
+      localStorage.setItem('ai_documents_v1', JSON.stringify(validDocs));
+    } catch (e) {
+      console.warn('Could not write AI docs to localStorage', e);
+    }
+
+    // Auto-sync AI Knowledge Base
+    if (window.sbyimKnowledgeBase) {
+      window.sbyimKnowledgeBase.syncKnowledgeBase().then(() => {
+        if (window.sbyimAIUI) window.sbyimAIUI.updateKnowledgeStatusBadge();
+      }).catch(() => {});
+    }
+
+    return validDocs;
+  }
+
+  /**
+   * Delete a single AI document by ID
+   */
+  async deleteAiDoc(id) {
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        await client.from('ai_documents').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Supabase deleteAiDoc failed:', err.message);
+      }
+    }
+
+    const docs = await this.getAiDocs();
+    const filtered = docs.filter(d => d.id !== id);
+    return await this.saveAiDocs(filtered);
   }
 
   // ==========================================================================
@@ -693,12 +865,372 @@ class NOCDatabase {
     }
   }
 
+  /**
+   * Get all custom Contractors / Companies
+   */
+  async getCustomContractors() {
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { data, error } = await client
+          .from('noc_custom_contractors')
+          .select('name')
+          .order('name', { ascending: true });
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          return data.map(r => (r.name || '').trim().toUpperCase()).filter(Boolean);
+        }
+      } catch (err) {
+        console.warn('Supabase getCustomContractors failed, reading local:', err.message);
+      }
+    }
+
+    try {
+      const stored = localStorage.getItem('noc_custom_contractors');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed.map(c => String(c).trim().toUpperCase()).filter(Boolean);
+      }
+    } catch (e) {
+      console.warn('Could not read custom contractors from localStorage', e);
+    }
+    return [];
+  }
+
+  /**
+   * Save a new custom Contractor / Company
+   */
+  async saveCustomContractor(contractorName) {
+    if (!contractorName) return;
+    const trimmed = String(contractorName).trim().toUpperCase();
+    if (!trimmed) return;
+
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        await client
+          .from('noc_custom_contractors')
+          .insert({ name: trimmed })
+          .select();
+      } catch (err) {
+        // Ignore duplicate error in Supabase
+        console.log('Supabase custom contractor insert note:', err.message);
+      }
+    }
+
+    // Save in local storage
+    try {
+      let customContractors = await this.getCustomContractors();
+      if (!customContractors.some(t => t.toUpperCase() === trimmed.toUpperCase())) {
+        customContractors.push(trimmed);
+        localStorage.setItem('noc_custom_contractors', JSON.stringify(customContractors));
+      }
+    } catch (e) {
+      console.warn('Could not save custom contractor to localStorage', e);
+    }
+  }
+
+  /**
+   * Update / Rename an existing Contractor / Company
+   */
+  async updateCustomContractor(oldName, newName) {
+    if (!oldName || !newName) return;
+    const oldTrimmed = String(oldName).trim().toUpperCase();
+    const newTrimmed = String(newName).trim().toUpperCase();
+    if (!oldTrimmed || !newTrimmed || oldTrimmed === newTrimmed) return;
+
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        // Update in custom contractors table if exists
+        await client
+          .from('noc_custom_contractors')
+          .update({ name: newTrimmed })
+          .eq('name', oldTrimmed);
+
+        // Also update any noc_records that reference the old contractor
+        await client
+          .from('noc_records')
+          .update({ issued_to: newTrimmed })
+          .eq('issued_to', oldTrimmed);
+      } catch (err) {
+        console.warn('Supabase contractor update note:', err.message);
+      }
+    }
+
+    // Save rename map in localStorage so renames persist across reloads
+    try {
+      const storedRenames = localStorage.getItem('noc_contractor_renames');
+      let renames = storedRenames ? JSON.parse(storedRenames) : {};
+      renames[oldTrimmed] = newTrimmed;
+      localStorage.setItem('noc_contractor_renames', JSON.stringify(renames));
+
+      // Update custom contractors array
+      let customContractors = await this.getCustomContractors();
+      const idx = customContractors.findIndex(c => c.toUpperCase() === oldTrimmed);
+      if (idx !== -1) {
+        customContractors[idx] = newTrimmed;
+      } else if (!customContractors.some(c => c.toUpperCase() === newTrimmed)) {
+        customContractors.push(newTrimmed);
+      }
+      localStorage.setItem('noc_custom_contractors', JSON.stringify(customContractors));
+
+      // Update local storage records
+      const rawRecords = localStorage.getItem('noc_records_v1');
+      if (rawRecords) {
+        let records = JSON.parse(rawRecords);
+        if (Array.isArray(records)) {
+          let modified = false;
+          records.forEach(r => {
+            if (r.issuedTo && r.issuedTo.trim().toUpperCase() === oldTrimmed) {
+              r.issuedTo = newTrimmed;
+              modified = true;
+            }
+          });
+          if (modified) {
+            localStorage.setItem('noc_records_v1', JSON.stringify(records));
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not update contractor in localStorage', e);
+    }
+  }
+
+  // ==========================================================================
+  // USER DATABASE MANAGEMENT (Supabase & Local)
+  // ==========================================================================
+
+  /**
+   * Default fallback system accounts
+   */
+  getDefaultUsers() {
+    return [
+      {
+        username: 'ryan',
+        password: 'SBYIM@2026',
+        role: 'developer',
+        displayName: 'Ryan (Developer)',
+        email: 'ryan@nocportal.gov'
+      },
+      {
+        username: 'admin',
+        password: 'SBYIM@2026',
+        role: 'admin',
+        displayName: 'System Administrator',
+        email: 'admin@nocportal.gov'
+      },
+      {
+        username: 'SBYIM',
+        password: 'ManagementNOC',
+        role: 'admin',
+        displayName: 'SBYIM Management',
+        email: 'sbyim@nocportal.gov'
+      },
+      {
+        username: 'developer',
+        password: 'dev123',
+        role: 'developer',
+        displayName: 'Lead Developer (System Engineer)',
+        email: 'developer@nocportal.gov'
+      },
+      {
+        username: 'security',
+        password: 'security123',
+        role: 'security',
+        displayName: 'Security Officer (Lookup & View)',
+        email: 'security@nocportal.gov'
+      },
+      {
+        username: 'main',
+        password: 'main123',
+        role: 'main',
+        displayName: 'Main Control Officer (Lookup & View)',
+        email: 'main@nocportal.gov'
+      },
+      {
+        username: 'guest',
+        password: 'guest123',
+        role: 'guest',
+        displayName: 'Guest Officer / Viewer',
+        email: 'guest@nocportal.gov'
+      }
+    ];
+  }
+
+  /**
+   * Get all user records from Supabase / localStorage
+   */
+  async getUsers() {
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { data, error } = await client
+          .from('noc_users')
+          .select('*')
+          .order('username', { ascending: true });
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          const users = data.map(r => this.mapDbToUser(r));
+          try {
+            localStorage.setItem('noc_users_v1', JSON.stringify(users));
+          } catch (e) {}
+          return users;
+        }
+      } catch (err) {
+        console.warn('Supabase getUsers failed, reading local:', err.message);
+      }
+    }
+
+    try {
+      const stored = localStorage.getItem('noc_users_v1');
+      if (stored) {
+        let parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // If admin exists and ryan doesn't, migrate admin to ryan
+          const adminIdx = parsed.findIndex(u => u.username.toLowerCase() === 'admin');
+          const ryanExists = parsed.some(u => u.username.toLowerCase() === 'ryan');
+          if (adminIdx >= 0 && !ryanExists) {
+            parsed[adminIdx].username = 'ryan';
+            parsed[adminIdx].displayName = 'Ryan (Developer)';
+            parsed[adminIdx].role = 'developer';
+            if (parsed[adminIdx].email === 'admin@nocportal.gov') {
+              parsed[adminIdx].email = 'ryan@nocportal.gov';
+            }
+          }
+          const ryanIdx = parsed.findIndex(u => u.username.toLowerCase() === 'ryan');
+          if (ryanIdx >= 0) {
+            parsed[ryanIdx].role = 'developer';
+            if (parsed[ryanIdx].displayName === 'Ryan (System Administrator)' || parsed[ryanIdx].displayName === 'System Administrator' || !parsed[ryanIdx].displayName) {
+              parsed[ryanIdx].displayName = 'Ryan (Developer)';
+            }
+          }
+          try {
+            localStorage.setItem('noc_users_v1', JSON.stringify(parsed));
+          } catch (e) {}
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read users from localStorage', e);
+    }
+
+    const defaults = this.getDefaultUsers();
+    try {
+      localStorage.setItem('noc_users_v1', JSON.stringify(defaults));
+    } catch (e) {}
+    return defaults;
+  }
+
+  /**
+   * Save (create or update) a user record in Supabase & localStorage
+   */
+  async saveUser(userData, origUsername = null) {
+    if (!userData || !userData.username || !userData.password) {
+      throw new Error('Username and Password are required.');
+    }
+
+    const userObj = {
+      username: String(userData.username).trim(),
+      password: String(userData.password).trim(),
+      role: ['admin', 'developer', 'security', 'employee', 'main', 'guest'].includes(userData.role) ? userData.role : 'guest',
+      displayName: (userData.displayName || userData.username).trim(),
+      email: (userData.email || '').trim()
+    };
+
+    const isRenaming = origUsername && String(origUsername).trim().toLowerCase() !== userObj.username.toLowerCase();
+
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        if (isRenaming) {
+          await client
+            .from('noc_users')
+            .delete()
+            .ilike('username', String(origUsername).trim());
+        }
+        const dbRow = this.mapUserToDb(userObj);
+        const { error } = await client
+          .from('noc_users')
+          .upsert(dbRow, { onConflict: 'username' });
+        if (error) throw error;
+      } catch (err) {
+        console.warn('Supabase saveUser failed, saving locally:', err.message);
+      }
+    }
+
+    const users = await this.getUsers();
+    let targetIdx = -1;
+    if (isRenaming) {
+      targetIdx = users.findIndex(u => u.username.toLowerCase() === String(origUsername).trim().toLowerCase());
+    } else {
+      targetIdx = users.findIndex(u => u.username.toLowerCase() === userObj.username.toLowerCase());
+    }
+
+    if (targetIdx >= 0) {
+      users[targetIdx] = userObj;
+    } else {
+      users.push(userObj);
+    }
+
+    try {
+      localStorage.setItem('noc_users_v1', JSON.stringify(users));
+    } catch (e) {}
+
+    // Refresh auth user cache
+    if (window.nocAuth && window.nocAuth.refreshUsers) {
+      await window.nocAuth.refreshUsers();
+    }
+
+    return userObj;
+  }
+
+  /**
+   * Delete a user by username
+   */
+  async deleteUser(username) {
+    if (!username) return false;
+    const cleanUsername = String(username).trim();
+
+    if (cleanUsername.toLowerCase() === 'admin' || cleanUsername.toLowerCase() === 'ryan') {
+      throw new Error('Cannot delete the primary System Administrator account.');
+    }
+
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { error } = await client
+          .from('noc_users')
+          .delete()
+          .ilike('username', cleanUsername);
+        if (error) throw error;
+      } catch (err) {
+        console.warn('Supabase deleteUser failed:', err.message);
+      }
+    }
+
+    const users = await this.getUsers();
+    const filtered = users.filter(u => u.username.toLowerCase() !== cleanUsername.toLowerCase());
+
+    try {
+      localStorage.setItem('noc_users_v1', JSON.stringify(filtered));
+    } catch (e) {}
+
+    if (window.nocAuth && window.nocAuth.refreshUsers) {
+      await window.nocAuth.refreshUsers();
+    }
+
+    return true;
+  }
+
   // ==========================================================================
   // 1-CLICK LOCAL TO SUPABASE SYNCHRONIZATION
   // ==========================================================================
 
   /**
-   * Push all current local data (NOC records, Requirements, Types) directly to Supabase
+   * Push all current local data directly to Supabase
    */
   async syncLocalToSupabase() {
     if (!this.isSupabaseActive()) {
@@ -709,13 +1241,17 @@ class NOCDatabase {
     const localRecords = await this._localGetAll();
     const localReqDocs = await this.getRequirementsDocs();
     const localCocDocs = await this.getCocDocs();
+    const localAiDocs = await this.getAiDocs();
     const localTypes = await this.getCustomTypes();
+    const localUsers = await this.getUsers();
 
     const stats = {
       recordsSynced: 0,
       reqDocsSynced: 0,
       cocDocsSynced: 0,
-      typesSynced: 0
+      aiDocsSynced: 0,
+      typesSynced: 0,
+      usersSynced: 0
     };
 
     // 1. Sync NOC Records
@@ -751,7 +1287,18 @@ class NOCDatabase {
       stats.cocDocsSynced = cocRows.length;
     }
 
-    // 4. Sync Custom Types
+    // 4. Sync AI Documents
+    if (localAiDocs && localAiDocs.length > 0) {
+      const aiRows = localAiDocs.map(d => this.mapAiDocToDb(d));
+      const { error: aiError } = await client
+        .from('ai_documents')
+        .upsert(aiRows, { onConflict: 'id' });
+
+      if (aiError) throw new Error(`Failed syncing AI documents: ${aiError.message}`);
+      stats.aiDocsSynced = aiRows.length;
+    }
+
+    // 5. Sync Custom Types
     if (localTypes && localTypes.length > 0) {
       const typeRows = localTypes.map(t => ({ name: t }));
       const { error: typeError } = await client
@@ -760,6 +1307,18 @@ class NOCDatabase {
 
       if (!typeError) {
         stats.typesSynced = typeRows.length;
+      }
+    }
+
+    // 6. Sync Users
+    if (localUsers && localUsers.length > 0) {
+      const userRows = localUsers.map(u => this.mapUserToDb(u));
+      const { error: userError } = await client
+        .from('noc_users')
+        .upsert(userRows, { onConflict: 'username' });
+
+      if (!userError) {
+        stats.usersSynced = userRows.length;
       }
     }
 
@@ -865,7 +1424,13 @@ class NOCDatabase {
       const request = store.getAll();
 
       request.onsuccess = () => {
-        const records = request.result || [];
+        let records = request.result || [];
+        records = records.map(r => {
+          if (r && r.issuedTo) {
+            r.issuedTo = String(r.issuedTo).trim().toUpperCase();
+          }
+          return r;
+        });
         records.sort((a, b) => new Date(b.createdAt || b.dateOfIssuance) - new Date(a.createdAt || a.dateOfIssuance));
         resolve(records);
       };
@@ -882,7 +1447,11 @@ class NOCDatabase {
       const store = transaction.objectStore(LOCAL_STORE_NAME);
       const request = store.get(id);
 
-      request.onsuccess = () => resolve(request.result || null);
+      request.onsuccess = () => {
+        const r = request.result || null;
+        if (r && r.issuedTo) r.issuedTo = String(r.issuedTo).trim().toUpperCase();
+        resolve(r);
+      };
       request.onerror = () => reject(request.error);
     });
   }
@@ -896,12 +1465,19 @@ class NOCDatabase {
       const index = store.index('nocNumber');
       const request = index.get(nocNumber);
 
-      request.onsuccess = () => resolve(request.result || null);
+      request.onsuccess = () => {
+        const r = request.result || null;
+        if (r && r.issuedTo) r.issuedTo = String(r.issuedTo).trim().toUpperCase();
+        resolve(r);
+      };
       request.onerror = () => reject(request.error);
     });
   }
 
   async _localAdd(record) {
+    if (record && record.issuedTo) {
+      record.issuedTo = String(record.issuedTo).trim().toUpperCase();
+    }
     const db = await this._getLocalDB();
     if (!db) return record;
     return new Promise((resolve, reject) => {
@@ -915,6 +1491,9 @@ class NOCDatabase {
   }
 
   async _localPut(record) {
+    if (record && record.issuedTo) {
+      record.issuedTo = String(record.issuedTo).trim().toUpperCase();
+    }
     const db = await this._getLocalDB();
     if (!db) return record;
     return new Promise((resolve, reject) => {
@@ -948,6 +1527,9 @@ class NOCDatabase {
       const store = transaction.objectStore(LOCAL_STORE_NAME);
 
       records.forEach((record) => {
+        if (record && record.issuedTo) {
+          record.issuedTo = String(record.issuedTo).trim().toUpperCase();
+        }
         store.put(record);
       });
 

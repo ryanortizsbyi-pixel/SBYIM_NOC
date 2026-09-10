@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS public.noc_records (
     noc_type VARCHAR(100) NOT NULL DEFAULT 'Activity',
     client VARCHAR(255) NOT NULL,
     issued_to VARCHAR(255) NOT NULL,
+    company_code VARCHAR(100),
     date_of_issuance DATE NOT NULL,
     date_of_expiration DATE NOT NULL,
     description TEXT,
@@ -75,7 +76,23 @@ COMMENT ON TABLE public.sbyi_coc_docs IS 'Official SBYI Code of Conduct (COC) PD
 CREATE INDEX IF NOT EXISTS idx_sbyi_coc_docs_uploaded_at ON public.sbyi_coc_docs (uploaded_at DESC);
 
 -- ============================================================================
--- 4. TABLE: noc_custom_types (Dynamic NOC Categories)
+-- 4. TABLE: ai_documents (Dedicated AI Knowledge Base Documents: DOC, DOCX, PDF)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.ai_documents (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(100) NOT NULL,
+    size BIGINT NOT NULL DEFAULT 0,
+    data_url TEXT NOT NULL,
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    uploaded_by VARCHAR(255) NOT NULL DEFAULT 'System Administrator'
+);
+
+COMMENT ON TABLE public.ai_documents IS 'AI Assistant Knowledge Base Documents (DOC, DOCX, or PDF files only)';
+CREATE INDEX IF NOT EXISTS idx_ai_docs_uploaded_at ON public.ai_documents (uploaded_at DESC);
+
+-- ============================================================================
+-- 5. TABLE: noc_custom_types (Dynamic NOC Categories)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.noc_custom_types (
     id BIGSERIAL PRIMARY KEY,
@@ -86,7 +103,7 @@ CREATE TABLE IF NOT EXISTS public.noc_custom_types (
 COMMENT ON TABLE public.noc_custom_types IS 'Custom NOC classification types added by administrators';
 
 -- ============================================================================
--- 5. AUTOMATIC TIMESTAMP TRIGGER (Updates updated_at on row modification)
+-- 6. AUTOMATIC TIMESTAMP TRIGGER (Updates updated_at on row modification)
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
@@ -103,12 +120,13 @@ CREATE TRIGGER trg_noc_records_updated_at
     EXECUTE FUNCTION public.handle_updated_at();
 
 -- ============================================================================
--- 6. ROW LEVEL SECURITY (RLS) POLICIES
+-- 7. ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
 -- Enable RLS
 ALTER TABLE public.noc_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_requirements_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sbyi_coc_docs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ai_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_custom_types ENABLE ROW LEVEL SECURITY;
 
 -- Clean up existing policies if any
@@ -118,6 +136,8 @@ DROP POLICY IF EXISTS "Allow public read on noc_requirements_docs" ON public.noc
 DROP POLICY IF EXISTS "Allow all operations on noc_requirements_docs" ON public.noc_requirements_docs;
 DROP POLICY IF EXISTS "Allow public read on sbyi_coc_docs" ON public.sbyi_coc_docs;
 DROP POLICY IF EXISTS "Allow all operations on sbyi_coc_docs" ON public.sbyi_coc_docs;
+DROP POLICY IF EXISTS "Allow public read on ai_documents" ON public.ai_documents;
+DROP POLICY IF EXISTS "Allow all operations on ai_documents" ON public.ai_documents;
 DROP POLICY IF EXISTS "Allow public read on noc_custom_types" ON public.noc_custom_types;
 DROP POLICY IF EXISTS "Allow all operations on noc_custom_types" ON public.noc_custom_types;
 
@@ -143,6 +163,13 @@ CREATE POLICY "Allow all operations on sbyi_coc_docs"
     USING (true)
     WITH CHECK (true);
 
+CREATE POLICY "Allow all operations on ai_documents"
+    ON public.ai_documents
+    FOR ALL
+    TO public
+    USING (true)
+    WITH CHECK (true);
+
 CREATE POLICY "Allow all operations on noc_custom_types"
     ON public.noc_custom_types
     FOR ALL
@@ -151,13 +178,54 @@ CREATE POLICY "Allow all operations on noc_custom_types"
     WITH CHECK (true);
 
 -- ============================================================================
--- 7. SEED DATA (Default Standard Types)
+-- 6. TABLE: noc_users (User Database & Role Accounts)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.noc_users (
+    username VARCHAR(100) PRIMARY KEY,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'guest',
+    display_name VARCHAR(255),
+    email VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+COMMENT ON TABLE public.noc_users IS 'Portal user credentials, access levels, and role permissions';
+CREATE INDEX IF NOT EXISTS idx_noc_users_role ON public.noc_users (role);
+
+ALTER TABLE public.noc_users ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow all operations on noc_users" ON public.noc_users;
+CREATE POLICY "Allow all operations on noc_users"
+    ON public.noc_users
+    FOR ALL
+    TO public
+    USING (true)
+    WITH CHECK (true);
+
+-- ============================================================================
+-- 8. SEED DATA (Default Standard Types & System Accounts)
 -- ============================================================================
 INSERT INTO public.noc_custom_types (name)
 VALUES 
     ('Activity'),
     ('Activity NOC')
 ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO public.noc_users (username, password, role, display_name, email)
+VALUES
+    ('ryan', 'SBYIM@2026', 'developer', 'Ryan (Developer)', 'ryan@nocportal.gov'),
+    ('admin', 'SBYIM@2026', 'admin', 'System Administrator', 'admin@nocportal.gov'),
+    ('SBYIM', 'ManagementNOC', 'admin', 'SBYIM Management', 'sbyim@nocportal.gov'),
+    ('developer', 'dev123', 'developer', 'Lead Developer (System Engineer)', 'developer@nocportal.gov'),
+    ('security', 'security123', 'security', 'Security Officer (Lookup & View)', 'security@nocportal.gov'),
+    ('main', 'main123', 'main', 'Main Control Officer (Lookup & View)', 'main@nocportal.gov'),
+    ('guest', 'guest123', 'guest', 'Guest Officer / Viewer', 'guest@nocportal.gov')
+ON CONFLICT (username) DO UPDATE
+SET password = EXCLUDED.password,
+    role = EXCLUDED.role,
+    display_name = EXCLUDED.display_name,
+    email = EXCLUDED.email;
 
 -- ============================================================================
 -- END OF SCHEMA SCRIPT

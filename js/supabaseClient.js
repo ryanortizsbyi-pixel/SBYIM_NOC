@@ -8,14 +8,22 @@ class SupabaseConfigManager {
     this.STORAGE_KEY_URL = 'noc_supabase_url';
     this.STORAGE_KEY_KEY = 'noc_supabase_anon_key';
     
-    // Default pre-configured Supabase Project URL & Anon Public API Key
-    this.defaultUrl = 'https://xycrdbcaggdthcyngkyn.supabase.co';
-    this.defaultAnonKey = 'sb_publishable_oq4jrLK3juO6RNSkniKJ9Q_9b08hvmc';
+    // Default Supabase connection removed
+    this.defaultUrl = '';
+    this.defaultAnonKey = '';
     
     this.client = null;
     this.isConnected = false;
     this.lastChecked = null;
     
+    // Clear any active Supabase connection from localStorage
+    try {
+      localStorage.removeItem(this.STORAGE_KEY_URL);
+      localStorage.removeItem(this.STORAGE_KEY_KEY);
+    } catch (e) {
+      console.warn('Could not clear Supabase keys from localStorage', e);
+    }
+
     this.initClient();
   }
 
@@ -26,17 +34,12 @@ class SupabaseConfigManager {
     try {
       const stored = localStorage.getItem(this.STORAGE_KEY_URL);
       if (stored && stored.trim()) {
-        // Automatically migrate legacy project URLs to the new Supabase server location
-        if (stored.includes('qstyziuwxklvcadqrho') || stored.includes('qstyziuwxklbvcadqrho')) {
-          localStorage.setItem(this.STORAGE_KEY_URL, this.defaultUrl);
-          return this.defaultUrl;
-        }
         return stored.trim();
       }
     } catch (e) {
       console.warn('Could not read Supabase URL from localStorage', e);
     }
-    return this.defaultUrl;
+    return '';
   }
 
   /**
@@ -46,17 +49,12 @@ class SupabaseConfigManager {
     try {
       const stored = localStorage.getItem(this.STORAGE_KEY_KEY);
       if (stored && stored.trim()) {
-        // Automatically migrate legacy API keys to the new Supabase API key
-        if (stored.includes('iqh_iXjgVJAqL6BtMJsm_g_Oe43JJFE')) {
-          localStorage.setItem(this.STORAGE_KEY_KEY, this.defaultAnonKey);
-          return this.defaultAnonKey;
-        }
         return stored.trim();
       }
     } catch (e) {
       console.warn('Could not read Supabase Anon Key from localStorage', e);
     }
-    return this.defaultAnonKey;
+    return '';
   }
 
   /**

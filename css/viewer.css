@@ -465,16 +465,27 @@
 
 @media (max-width: 480px) {
   .viewer-controls {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr) 1.2fr 1fr;
-    gap: 0.3rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    width: 100%;
   }
 
   .viewer-btn,
   .viewer-close-btn {
-    padding: 0.35rem 0.45rem;
-    font-size: 0.75rem;
-    min-height: 36px;
+    flex: 1 1 calc(33.333% - 0.35rem);
+    padding: 0.45rem 0.35rem;
+    font-size: 0.76rem;
+    min-height: 40px;
+    justify-content: center;
+  }
+
+  .viewer-btn.primary {
+    flex: 1 1 calc(50% - 0.35rem);
+  }
+
+  .viewer-close-btn {
+    flex: 1 1 calc(50% - 0.35rem);
   }
 
   .viewer-title {

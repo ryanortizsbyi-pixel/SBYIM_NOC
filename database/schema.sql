@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS public.noc_records (
     noc_type VARCHAR(100) NOT NULL DEFAULT 'Activity',
     client VARCHAR(255) NOT NULL,
     issued_to VARCHAR(255) NOT NULL,
+    company_code VARCHAR(100),
     date_of_issuance DATE NOT NULL,
     date_of_expiration DATE NOT NULL,
     description TEXT,
@@ -97,6 +98,21 @@ ALTER TABLE public.noc_requirements_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sbyi_coc_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_custom_types ENABLE ROW LEVEL SECURITY;
 
+-- ----------------------------------------------------------------------------
+-- 6. Table: noc_users (User Database & Role Accounts)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.noc_users (
+    username VARCHAR(100) PRIMARY KEY,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'guest',
+    display_name VARCHAR(255),
+    email VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.noc_users ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "Allow all operations on noc_records" ON public.noc_records;
 CREATE POLICY "Allow all operations on noc_records"
     ON public.noc_records FOR ALL TO public USING (true) WITH CHECK (true);
@@ -113,11 +129,30 @@ DROP POLICY IF EXISTS "Allow all operations on noc_custom_types" ON public.noc_c
 CREATE POLICY "Allow all operations on noc_custom_types"
     ON public.noc_custom_types FOR ALL TO public USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow all operations on noc_users" ON public.noc_users;
+CREATE POLICY "Allow all operations on noc_users"
+    ON public.noc_users FOR ALL TO public USING (true) WITH CHECK (true);
+
 -- ----------------------------------------------------------------------------
--- 7. Seed Default Types
+-- 7. Seed Default Types & System Accounts
 -- ----------------------------------------------------------------------------
 INSERT INTO public.noc_custom_types (name)
 VALUES 
     ('Activity'),
     ('Activity NOC')
 ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO public.noc_users (username, password, role, display_name, email)
+VALUES
+    ('ryan', 'SBYIM@2026', 'developer', 'Ryan (Developer)', 'ryan@nocportal.gov'),
+    ('admin', 'SBYIM@2026', 'admin', 'System Administrator', 'admin@nocportal.gov'),
+    ('SBYIM', 'ManagementNOC', 'admin', 'SBYIM Management', 'sbyim@nocportal.gov'),
+    ('developer', 'dev123', 'developer', 'Lead Developer (System Engineer)', 'developer@nocportal.gov'),
+    ('security', 'security123', 'security', 'Security Officer (Lookup & View)', 'security@nocportal.gov'),
+    ('main', 'main123', 'main', 'Main Control Officer (Lookup & View)', 'main@nocportal.gov'),
+    ('guest', 'guest123', 'guest', 'Guest Officer / Viewer', 'guest@nocportal.gov')
+ON CONFLICT (username) DO UPDATE
+SET password = EXCLUDED.password,
+    role = EXCLUDED.role,
+    display_name = EXCLUDED.display_name,
+    email = EXCLUDED.email;

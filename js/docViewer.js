@@ -474,18 +474,15 @@ class DocumentViewer {
 
     const isGuest = window.nocAuth && window.nocAuth.isGuest();
     const isPDF = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
-    const isRestrictedGuest = isGuest && isPDF && !this.currentOptions?.allowFullPages;
+    const isRestrictedGuest = false; // Full PDF viewing allowed for Guest mode
 
     // Update Header info
     let titleText = `${doc.name} (${this.currentIndex + 1}/${this.currentDocs.length})`;
-    if (isRestrictedGuest) {
-      titleText += ` [Page 1 Only - Guest Mode]`;
-    }
     if (this.titleEl) this.titleEl.textContent = titleText;
     
     if (this.badgeEl) {
-      this.badgeEl.className = `viewer-badge ${isRestrictedGuest ? 'page1' : (isPDF ? 'pdf' : 'image')}`;
-      this.badgeEl.textContent = isPDF ? (isRestrictedGuest ? 'PDF Page 1' : 'PDF Document') : 'Image';
+      this.badgeEl.className = `viewer-badge ${isPDF ? 'pdf' : 'image'}`;
+      this.badgeEl.textContent = isPDF ? 'PDF Document' : 'Image';
     }
 
     // Enable zoom, rotate, and reset controls for both PDFs and images
@@ -608,27 +605,14 @@ class DocumentViewer {
     if (!doc) return;
 
     const isGuest = window.nocAuth && window.nocAuth.isGuest();
-    const isPDF = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
-    const isRestricted = isGuest && isPDF && !this.currentOptions?.allowFullPages;
-
-    if (isRestricted) {
-      const baseName = doc.name.replace(/\.pdf$/i, '');
-      const page1FileName = `${baseName}_Page_1.pdf`;
-
+    if (isGuest && !this.currentOptions?.isGuidelineDoc) {
       if (window.showToast) {
-        window.showToast('Extracting Page 1 for download...', 'info');
+        window.showToast('Document downloads are restricted for Guest accounts.', 'error');
       }
-
-      const singlePageBlob = await this.getFirstPagePdfBlob(doc.dataUrl);
-      if (singlePageBlob) {
-        this.triggerFileDownload(singlePageBlob, page1FileName);
-      } else {
-        const page1Url = await this.getFirstPagePdfDataUrl(doc.dataUrl);
-        this.triggerFileDownload(page1Url, page1FileName);
-      }
-    } else {
-      this.triggerFileDownload(doc.dataUrl, doc.name);
+      return;
     }
+
+    this.triggerFileDownload(doc.dataUrl, doc.name);
   }
 
   /**
