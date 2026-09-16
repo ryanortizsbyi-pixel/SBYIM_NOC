@@ -65,7 +65,22 @@ CREATE TABLE IF NOT EXISTS public.sbyi_coc_docs (
 CREATE INDEX IF NOT EXISTS idx_sbyi_coc_docs_uploaded_at ON public.sbyi_coc_docs (uploaded_at DESC);
 
 -- ----------------------------------------------------------------------------
--- 4. Table: noc_custom_types
+-- 4. Table: ai_documents (Dedicated AI Knowledge Base Documents)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.ai_documents (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(100) NOT NULL,
+    size BIGINT NOT NULL DEFAULT 0,
+    data_url TEXT NOT NULL,
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    uploaded_by VARCHAR(255) NOT NULL DEFAULT 'System Administrator'
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_docs_uploaded_at ON public.ai_documents (uploaded_at DESC);
+
+-- ----------------------------------------------------------------------------
+-- 5. Table: noc_custom_types
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.noc_custom_types (
     id BIGSERIAL PRIMARY KEY,
@@ -73,8 +88,36 @@ CREATE TABLE IF NOT EXISTS public.noc_custom_types (
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+CREATE INDEX IF NOT EXISTS idx_noc_custom_types_name ON public.noc_custom_types (name);
+
 -- ----------------------------------------------------------------------------
--- 5. Trigger: Auto updated_at timestamp
+-- 6. Table: noc_custom_contractors
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.noc_custom_contractors (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_noc_custom_contractors_name ON public.noc_custom_contractors (name);
+
+-- ----------------------------------------------------------------------------
+-- 7. Table: noc_users (User Database & Role Accounts)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.noc_users (
+    username VARCHAR(100) PRIMARY KEY,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'guest',
+    display_name VARCHAR(255),
+    email VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_noc_users_role ON public.noc_users (role);
+
+-- ----------------------------------------------------------------------------
+-- 8. Trigger: Auto updated_at timestamp
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
@@ -90,27 +133,21 @@ CREATE TRIGGER trg_noc_records_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS trg_noc_users_updated_at ON public.noc_users;
+CREATE TRIGGER trg_noc_users_updated_at
+    BEFORE UPDATE ON public.noc_users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_updated_at();
+
 -- ----------------------------------------------------------------------------
--- 6. Row Level Security (RLS) Policies
+-- 9. Row Level Security (RLS) Policies
 -- ----------------------------------------------------------------------------
 ALTER TABLE public.noc_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_requirements_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sbyi_coc_docs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ai_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_custom_types ENABLE ROW LEVEL SECURITY;
-
--- ----------------------------------------------------------------------------
--- 6. Table: noc_users (User Database & Role Accounts)
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.noc_users (
-    username VARCHAR(100) PRIMARY KEY,
-    password VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL DEFAULT 'guest',
-    display_name VARCHAR(255),
-    email VARCHAR(255),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
-);
-
+ALTER TABLE public.noc_custom_contractors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_users ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow all operations on noc_records" ON public.noc_records;
@@ -125,16 +162,24 @@ DROP POLICY IF EXISTS "Allow all operations on sbyi_coc_docs" ON public.sbyi_coc
 CREATE POLICY "Allow all operations on sbyi_coc_docs"
     ON public.sbyi_coc_docs FOR ALL TO public USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow all operations on ai_documents" ON public.ai_documents;
+CREATE POLICY "Allow all operations on ai_documents"
+    ON public.ai_documents FOR ALL TO public USING (true) WITH CHECK (true);
+
 DROP POLICY IF EXISTS "Allow all operations on noc_custom_types" ON public.noc_custom_types;
 CREATE POLICY "Allow all operations on noc_custom_types"
     ON public.noc_custom_types FOR ALL TO public USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all operations on noc_custom_contractors" ON public.noc_custom_contractors;
+CREATE POLICY "Allow all operations on noc_custom_contractors"
+    ON public.noc_custom_contractors FOR ALL TO public USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all operations on noc_users" ON public.noc_users;
 CREATE POLICY "Allow all operations on noc_users"
     ON public.noc_users FOR ALL TO public USING (true) WITH CHECK (true);
 
 -- ----------------------------------------------------------------------------
--- 7. Seed Default Types & System Accounts
+-- 10. Seed Default Types & System Accounts
 -- ----------------------------------------------------------------------------
 INSERT INTO public.noc_custom_types (name)
 VALUES 

@@ -1788,7 +1788,6 @@ CREATE TABLE IF NOT EXISTS public.noc_records (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
--- Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_noc_records_noc_number ON public.noc_records (noc_number);
 CREATE INDEX IF NOT EXISTS idx_noc_records_noc_type ON public.noc_records (noc_type);
 CREATE INDEX IF NOT EXISTS idx_noc_records_client ON public.noc_records (client);
@@ -1843,7 +1842,31 @@ CREATE TABLE IF NOT EXISTS public.noc_custom_types (
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
--- 6. AUTOMATIC TIMESTAMP TRIGGER
+CREATE INDEX IF NOT EXISTS idx_noc_custom_types_name ON public.noc_custom_types (name);
+
+-- 6. TABLE: noc_custom_contractors (Dynamic Contractors & Companies)
+CREATE TABLE IF NOT EXISTS public.noc_custom_contractors (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_noc_custom_contractors_name ON public.noc_custom_contractors (name);
+
+-- 7. TABLE: noc_users (User Database & Role Accounts)
+CREATE TABLE IF NOT EXISTS public.noc_users (
+    username VARCHAR(100) PRIMARY KEY,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'guest',
+    display_name VARCHAR(255),
+    email VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_noc_users_role ON public.noc_users (role);
+
+-- 8. AUTOMATIC TIMESTAMP TRIGGER
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -1858,12 +1881,20 @@ CREATE TRIGGER trg_noc_records_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_updated_at();
 
--- 7. ROW LEVEL SECURITY (RLS) POLICIES
+DROP TRIGGER IF EXISTS trg_noc_users_updated_at ON public.noc_users;
+CREATE TRIGGER trg_noc_users_updated_at
+    BEFORE UPDATE ON public.noc_users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_updated_at();
+
+-- 9. ROW LEVEL SECURITY (RLS) POLICIES
 ALTER TABLE public.noc_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_requirements_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sbyi_coc_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_custom_types ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.noc_custom_contractors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.noc_users ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow all operations on noc_records" ON public.noc_records;
 CREATE POLICY "Allow all operations on noc_records" ON public.noc_records FOR ALL TO public USING (true) WITH CHECK (true);
@@ -1880,22 +1911,13 @@ CREATE POLICY "Allow all operations on ai_documents" ON public.ai_documents FOR 
 DROP POLICY IF EXISTS "Allow all operations on noc_custom_types" ON public.noc_custom_types;
 CREATE POLICY "Allow all operations on noc_custom_types" ON public.noc_custom_types FOR ALL TO public USING (true) WITH CHECK (true);
 
--- 6. TABLE: noc_users (User Database & Role Accounts)
-CREATE TABLE IF NOT EXISTS public.noc_users (
-    username VARCHAR(100) PRIMARY KEY,
-    password VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL DEFAULT 'guest',
-    display_name VARCHAR(255),
-    email VARCHAR(255),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
-);
+DROP POLICY IF EXISTS "Allow all operations on noc_custom_contractors" ON public.noc_custom_contractors;
+CREATE POLICY "Allow all operations on noc_custom_contractors" ON public.noc_custom_contractors FOR ALL TO public USING (true) WITH CHECK (true);
 
-ALTER TABLE public.noc_users ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all operations on noc_users" ON public.noc_users;
 CREATE POLICY "Allow all operations on noc_users" ON public.noc_users FOR ALL TO public USING (true) WITH CHECK (true);
 
--- 8. DEFAULT CATEGORIES & SEED USERS
+-- 10. DEFAULT CATEGORIES & SEED USERS
 INSERT INTO public.noc_custom_types (name) VALUES ('Activity'), ('Activity NOC') ON CONFLICT (name) DO NOTHING;
 
 INSERT INTO public.noc_users (username, password, role, display_name, email)

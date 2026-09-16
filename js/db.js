@@ -1243,6 +1243,7 @@ class NOCDatabase {
     const localCocDocs = await this.getCocDocs();
     const localAiDocs = await this.getAiDocs();
     const localTypes = await this.getCustomTypes();
+    const localContractors = await this.getCustomContractors();
     const localUsers = await this.getUsers();
 
     const stats = {
@@ -1251,6 +1252,7 @@ class NOCDatabase {
       cocDocsSynced: 0,
       aiDocsSynced: 0,
       typesSynced: 0,
+      contractorsSynced: 0,
       usersSynced: 0
     };
 
@@ -1310,7 +1312,19 @@ class NOCDatabase {
       }
     }
 
-    // 6. Sync Users
+    // 6. Sync Custom Contractors
+    if (localContractors && localContractors.length > 0) {
+      const contractorRows = localContractors.map(c => ({ name: c }));
+      const { error: contractorError } = await client
+        .from('noc_custom_contractors')
+        .upsert(contractorRows, { onConflict: 'name' });
+
+      if (!contractorError) {
+        stats.contractorsSynced = contractorRows.length;
+      }
+    }
+
+    // 7. Sync Users
     if (localUsers && localUsers.length > 0) {
       const userRows = localUsers.map(u => this.mapUserToDb(u));
       const { error: userError } = await client

@@ -5,8 +5,7 @@
 -- 1. Open your Supabase Project Dashboard (https://supabase.com/dashboard)
 -- 2. Go to the SQL Editor (left sidebar > SQL Editor)
 -- 3. Paste this entire script and click "Run" (or press Ctrl+Enter / Cmd+Enter)
--- 4. Copy your Project URL & Anon Key from Project Settings > API
--- 5. Paste them into the Database Settings modal in the NOC Portal Web App!
+-- 4. Your project URL & Anon Key are pre-configured in the NOC Portal Web App!
 -- ============================================================================
 
 -- Enable UUID extension if not already enabled
@@ -101,9 +100,38 @@ CREATE TABLE IF NOT EXISTS public.noc_custom_types (
 );
 
 COMMENT ON TABLE public.noc_custom_types IS 'Custom NOC classification types added by administrators';
+CREATE INDEX IF NOT EXISTS idx_noc_custom_types_name ON public.noc_custom_types (name);
 
 -- ============================================================================
--- 6. AUTOMATIC TIMESTAMP TRIGGER (Updates updated_at on row modification)
+-- 6. TABLE: noc_custom_contractors (Dynamic Contractors & Companies)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.noc_custom_contractors (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+COMMENT ON TABLE public.noc_custom_contractors IS 'Custom contractors and registered companies added by administrators';
+CREATE INDEX IF NOT EXISTS idx_noc_custom_contractors_name ON public.noc_custom_contractors (name);
+
+-- ============================================================================
+-- 7. TABLE: noc_users (User Database & Role Accounts)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.noc_users (
+    username VARCHAR(100) PRIMARY KEY,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'guest',
+    display_name VARCHAR(255),
+    email VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+COMMENT ON TABLE public.noc_users IS 'Portal user credentials, access levels, and role permissions';
+CREATE INDEX IF NOT EXISTS idx_noc_users_role ON public.noc_users (role);
+
+-- ============================================================================
+-- 8. AUTOMATIC TIMESTAMP TRIGGER (Updates updated_at on row modification)
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
@@ -119,92 +147,56 @@ CREATE TRIGGER trg_noc_records_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS trg_noc_users_updated_at ON public.noc_users;
+CREATE TRIGGER trg_noc_users_updated_at
+    BEFORE UPDATE ON public.noc_users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_updated_at();
+
 -- ============================================================================
--- 7. ROW LEVEL SECURITY (RLS) POLICIES
+-- 9. ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
--- Enable RLS
 ALTER TABLE public.noc_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_requirements_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sbyi_coc_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_custom_types ENABLE ROW LEVEL SECURITY;
-
--- Clean up existing policies if any
-DROP POLICY IF EXISTS "Allow public read on noc_records" ON public.noc_records;
-DROP POLICY IF EXISTS "Allow all operations on noc_records" ON public.noc_records;
-DROP POLICY IF EXISTS "Allow public read on noc_requirements_docs" ON public.noc_requirements_docs;
-DROP POLICY IF EXISTS "Allow all operations on noc_requirements_docs" ON public.noc_requirements_docs;
-DROP POLICY IF EXISTS "Allow public read on sbyi_coc_docs" ON public.sbyi_coc_docs;
-DROP POLICY IF EXISTS "Allow all operations on sbyi_coc_docs" ON public.sbyi_coc_docs;
-DROP POLICY IF EXISTS "Allow public read on ai_documents" ON public.ai_documents;
-DROP POLICY IF EXISTS "Allow all operations on ai_documents" ON public.ai_documents;
-DROP POLICY IF EXISTS "Allow public read on noc_custom_types" ON public.noc_custom_types;
-DROP POLICY IF EXISTS "Allow all operations on noc_custom_types" ON public.noc_custom_types;
-
--- Simple, permissive policies for NOC Portal Web App (Supports anon public key & authenticated users)
-CREATE POLICY "Allow all operations on noc_records"
-    ON public.noc_records
-    FOR ALL
-    TO public
-    USING (true)
-    WITH CHECK (true);
-
-CREATE POLICY "Allow all operations on noc_requirements_docs"
-    ON public.noc_requirements_docs
-    FOR ALL
-    TO public
-    USING (true)
-    WITH CHECK (true);
-
-CREATE POLICY "Allow all operations on sbyi_coc_docs"
-    ON public.sbyi_coc_docs
-    FOR ALL
-    TO public
-    USING (true)
-    WITH CHECK (true);
-
-CREATE POLICY "Allow all operations on ai_documents"
-    ON public.ai_documents
-    FOR ALL
-    TO public
-    USING (true)
-    WITH CHECK (true);
-
-CREATE POLICY "Allow all operations on noc_custom_types"
-    ON public.noc_custom_types
-    FOR ALL
-    TO public
-    USING (true)
-    WITH CHECK (true);
-
--- ============================================================================
--- 6. TABLE: noc_users (User Database & Role Accounts)
--- ============================================================================
-CREATE TABLE IF NOT EXISTS public.noc_users (
-    username VARCHAR(100) PRIMARY KEY,
-    password VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL DEFAULT 'guest',
-    display_name VARCHAR(255),
-    email VARCHAR(255),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
-);
-
-COMMENT ON TABLE public.noc_users IS 'Portal user credentials, access levels, and role permissions';
-CREATE INDEX IF NOT EXISTS idx_noc_users_role ON public.noc_users (role);
-
+ALTER TABLE public.noc_custom_contractors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_users ENABLE ROW LEVEL SECURITY;
 
+-- Clean up existing policies if any
+DROP POLICY IF EXISTS "Allow all operations on noc_records" ON public.noc_records;
+DROP POLICY IF EXISTS "Allow all operations on noc_requirements_docs" ON public.noc_requirements_docs;
+DROP POLICY IF EXISTS "Allow all operations on sbyi_coc_docs" ON public.sbyi_coc_docs;
+DROP POLICY IF EXISTS "Allow all operations on ai_documents" ON public.ai_documents;
+DROP POLICY IF EXISTS "Allow all operations on noc_custom_types" ON public.noc_custom_types;
+DROP POLICY IF EXISTS "Allow all operations on noc_custom_contractors" ON public.noc_custom_contractors;
 DROP POLICY IF EXISTS "Allow all operations on noc_users" ON public.noc_users;
+
+-- Permissive policies for NOC Portal Web App (Supports anon public key & authenticated users)
+CREATE POLICY "Allow all operations on noc_records"
+    ON public.noc_records FOR ALL TO public USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow all operations on noc_requirements_docs"
+    ON public.noc_requirements_docs FOR ALL TO public USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow all operations on sbyi_coc_docs"
+    ON public.sbyi_coc_docs FOR ALL TO public USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow all operations on ai_documents"
+    ON public.ai_documents FOR ALL TO public USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow all operations on noc_custom_types"
+    ON public.noc_custom_types FOR ALL TO public USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow all operations on noc_custom_contractors"
+    ON public.noc_custom_contractors FOR ALL TO public USING (true) WITH CHECK (true);
+
 CREATE POLICY "Allow all operations on noc_users"
-    ON public.noc_users
-    FOR ALL
-    TO public
-    USING (true)
-    WITH CHECK (true);
+    ON public.noc_users FOR ALL TO public USING (true) WITH CHECK (true);
 
 -- ============================================================================
--- 8. SEED DATA (Default Standard Types & System Accounts)
+-- 10. SEED DATA (Default Standard Types, Contractors & System Accounts)
 -- ============================================================================
 INSERT INTO public.noc_custom_types (name)
 VALUES 

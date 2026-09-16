@@ -1652,7 +1652,7 @@ class NOCApp {
 
         try {
           const stats = await window.nocDB.syncLocalToSupabase();
-          window.showToast(`Sync successful! ${stats.recordsSynced} records, ${stats.reqDocsSynced} guidelines, and ${stats.cocDocsSynced || 0} SBYI COC certificates pushed to Supabase.`, 'success');
+          window.showToast(`Sync successful! ${stats.recordsSynced} records, ${stats.reqDocsSynced} guidelines, ${stats.cocDocsSynced || 0} COC docs, ${stats.aiDocsSynced || 0} AI docs, ${stats.typesSynced || 0} types, ${stats.contractorsSynced || 0} contractors & ${stats.usersSynced || 0} users pushed to Supabase.`, 'success');
           await this.refreshData();
         } catch (err) {
           window.showToast('Sync failed: ' + err.message, 'error');
