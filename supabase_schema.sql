@@ -29,11 +29,9 @@ CREATE TABLE IF NOT EXISTS public.noc_records (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
--- Comments for documentation
 COMMENT ON TABLE public.noc_records IS 'Official No Objection Certificate (NOC) registry storing permit details and attachments';
 COMMENT ON COLUMN public.noc_records.documents IS 'Array of JSON objects containing document metadata and DataURL/Storage paths';
 
--- Create performance indexes for search, filtering, and sorting
 CREATE INDEX IF NOT EXISTS idx_noc_records_noc_number ON public.noc_records (noc_number);
 CREATE INDEX IF NOT EXISTS idx_noc_records_noc_type ON public.noc_records (noc_type);
 CREATE INDEX IF NOT EXISTS idx_noc_records_client ON public.noc_records (client);
@@ -115,7 +113,18 @@ COMMENT ON TABLE public.noc_custom_contractors IS 'Custom contractors and regist
 CREATE INDEX IF NOT EXISTS idx_noc_custom_contractors_name ON public.noc_custom_contractors (name);
 
 -- ============================================================================
--- 7. TABLE: noc_users (User Database & Role Accounts)
+-- 7. TABLE: noc_settings (System Preferences, Custom Maps & Dynamic Configs)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.noc_settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+COMMENT ON TABLE public.noc_settings IS 'Global system settings, contractor renames, and application state configurations';
+
+-- ============================================================================
+-- 8. TABLE: noc_users (User Database & Role Accounts)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.noc_users (
     username VARCHAR(100) PRIMARY KEY,
@@ -131,7 +140,7 @@ COMMENT ON TABLE public.noc_users IS 'Portal user credentials, access levels, an
 CREATE INDEX IF NOT EXISTS idx_noc_users_role ON public.noc_users (role);
 
 -- ============================================================================
--- 8. AUTOMATIC TIMESTAMP TRIGGER (Updates updated_at on row modification)
+-- 9. AUTOMATIC TIMESTAMP TRIGGER (Updates updated_at on row modification)
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
@@ -153,8 +162,14 @@ CREATE TRIGGER trg_noc_users_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS trg_noc_settings_updated_at ON public.noc_settings;
+CREATE TRIGGER trg_noc_settings_updated_at
+    BEFORE UPDATE ON public.noc_settings
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_updated_at();
+
 -- ============================================================================
--- 9. ROW LEVEL SECURITY (RLS) POLICIES
+-- 10. ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
 ALTER TABLE public.noc_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_requirements_docs ENABLE ROW LEVEL SECURITY;
@@ -162,18 +177,18 @@ ALTER TABLE public.sbyi_coc_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_custom_types ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_custom_contractors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.noc_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.noc_users ENABLE ROW LEVEL SECURITY;
 
--- Clean up existing policies if any
 DROP POLICY IF EXISTS "Allow all operations on noc_records" ON public.noc_records;
 DROP POLICY IF EXISTS "Allow all operations on noc_requirements_docs" ON public.noc_requirements_docs;
 DROP POLICY IF EXISTS "Allow all operations on sbyi_coc_docs" ON public.sbyi_coc_docs;
 DROP POLICY IF EXISTS "Allow all operations on ai_documents" ON public.ai_documents;
 DROP POLICY IF EXISTS "Allow all operations on noc_custom_types" ON public.noc_custom_types;
 DROP POLICY IF EXISTS "Allow all operations on noc_custom_contractors" ON public.noc_custom_contractors;
+DROP POLICY IF EXISTS "Allow all operations on noc_settings" ON public.noc_settings;
 DROP POLICY IF EXISTS "Allow all operations on noc_users" ON public.noc_users;
 
--- Permissive policies for NOC Portal Web App (Supports anon public key & authenticated users)
 CREATE POLICY "Allow all operations on noc_records"
     ON public.noc_records FOR ALL TO public USING (true) WITH CHECK (true);
 
@@ -192,18 +207,114 @@ CREATE POLICY "Allow all operations on noc_custom_types"
 CREATE POLICY "Allow all operations on noc_custom_contractors"
     ON public.noc_custom_contractors FOR ALL TO public USING (true) WITH CHECK (true);
 
+CREATE POLICY "Allow all operations on noc_settings"
+    ON public.noc_settings FOR ALL TO public USING (true) WITH CHECK (true);
+
 CREATE POLICY "Allow all operations on noc_users"
     ON public.noc_users FOR ALL TO public USING (true) WITH CHECK (true);
 
 -- ============================================================================
--- 10. SEED DATA (Default Standard Types, Contractors & System Accounts)
+-- 11. SEED DATA (Default Types, Contractors, Records, Settings & System Accounts)
 -- ============================================================================
+-- 11.1 Default Categories
 INSERT INTO public.noc_custom_types (name)
 VALUES 
     ('Activity'),
     ('Activity NOC')
 ON CONFLICT (name) DO NOTHING;
 
+-- 11.2 Default Registered Contractors
+INSERT INTO public.noc_custom_contractors (name)
+VALUES
+    ('APEX ENGINEERING & INFRASTRUCTURE LTD.'),
+    ('TRANS-GULF CONTRACTING CO.'),
+    ('PIONEER DEMOLITION SPECIALISTS LLC'),
+    ('SKYLINE ELECTROMECHANICAL SERVICES'),
+    ('METROPOLITAN BUILDERS CORP.'),
+    ('AL JABER BUILDING LLC'),
+    ('ARABTEC CONSTRUCTION'),
+    ('SIX CONSTRUCT')
+ON CONFLICT (name) DO NOTHING;
+
+-- 11.3 Initial NOC Records
+INSERT INTO public.noc_records (id, noc_number, noc_type, client, issued_to, company_code, date_of_issuance, date_of_expiration, description, documents)
+VALUES 
+(
+    'noc_seed_001',
+    'NOC-2026-0042',
+    'Activity NOC',
+    'Municipal Urban Development Authority',
+    'APEX ENGINEERING & INFRASTRUCTURE LTD.',
+    'APEX-01',
+    '2026-01-15',
+    '2026-12-31',
+    'Construction authorization for multi-story commercial tower including structural foundation, deep basement excavation, and fire life safety system installation.',
+    '[]'::jsonb
+),
+(
+    'noc_seed_002',
+    'NOC-2026-0118',
+    'Activity',
+    'National Highway Authority',
+    'TRANS-GULF CONTRACTING CO.',
+    'TG-2026',
+    '2026-07-01',
+    '2026-09-10',
+    'Temporary road cutting permit for underground high-voltage 33kV cable laying across Sector 4B boulevard with complete traffic detour management.',
+    '[]'::jsonb
+),
+(
+    'noc_seed_003',
+    'NOC-2025-0891',
+    'Activity NOC',
+    'Vertex Commercial Properties',
+    'PIONEER DEMOLITION SPECIALISTS LLC',
+    NULL,
+    '2025-05-10',
+    '2026-05-10',
+    'Controlled mechanical demolition of obsolete two-story industrial warehouse structure, hazardous asbestos abatement, and site debris removal.',
+    '[]'::jsonb
+),
+(
+    'noc_seed_004',
+    'NOC-2026-0205',
+    'Activity',
+    'State Water & Power Dept.',
+    'SKYLINE ELECTROMECHANICAL SERVICES',
+    'SKY-04',
+    '2026-03-20',
+    '2027-03-20',
+    'Installation and commissioning of 1500kVA step-down compact substation transformer unit and feeder panel routing for residential district.',
+    '[]'::jsonb
+),
+(
+    'noc_seed_005',
+    'NOC-2026-0310',
+    'Activity NOC',
+    'Grand Plaza Shopping Mall',
+    'METROPOLITAN BUILDERS CORP.',
+    NULL,
+    '2026-06-01',
+    '2026-11-30',
+    'Internal architectural fit-out, HVAC duct installation, fire suppression sprinkler routing, and ceiling framing for retail store Units 104-106.',
+    '[]'::jsonb
+)
+ON CONFLICT (noc_number) DO UPDATE
+SET client = EXCLUDED.client,
+    issued_to = EXCLUDED.issued_to,
+    company_code = EXCLUDED.company_code,
+    date_of_issuance = EXCLUDED.date_of_issuance,
+    date_of_expiration = EXCLUDED.date_of_expiration,
+    description = EXCLUDED.description;
+
+-- 11.4 Initial Settings
+INSERT INTO public.noc_settings (key, value)
+VALUES
+    ('noc_contractor_renames', '{}'::jsonb),
+    ('portal_config', '{"autoSync": true, "theme": "light"}'::jsonb)
+ON CONFLICT (key) DO NOTHING;
+
+-- 11.5 Initial User Accounts
 INSERT INTO public.noc_users (username, password, role, display_name, email)
 VALUES
     ('ryan', 'SBYIM@2026', 'developer', 'Ryan (Developer)', 'ryan@nocportal.gov'),

@@ -789,9 +789,14 @@
                 Push all current local records, requirements documents, SBYI COC certificates, AI documents, custom types, contractors, and user accounts to your Supabase PostgreSQL database.
               </p>
             </div>
-            <button type="button" class="btn btn-green" id="btnSyncToSupabase">
-              ⬆️ Sync to Supabase
-            </button>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+              <button type="button" class="btn btn-outline" id="btnRestoreAllData" style="background:#FFFFFF; border-color:#93C5FD; color:#1E40AF;" title="Restore all initial NOC records, documents, contractors, and users">
+                🔄 Restore All Data
+              </button>
+              <button type="button" class="btn btn-green" id="btnSyncToSupabase" title="Push local database to Supabase PostgreSQL">
+                ⬆️ Sync to Supabase
+              </button>
+            </div>
           </div>
         </div>
 

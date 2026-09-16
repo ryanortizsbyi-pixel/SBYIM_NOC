@@ -2,14 +2,27 @@
 -- SBYIM NOC PORTAL - SAMPLE SEED DATA
 -- ============================================================================
 
--- Default Custom Types
+-- 1. Default Custom Types
 INSERT INTO public.noc_custom_types (name)
 VALUES 
     ('Activity'),
     ('Activity NOC')
 ON CONFLICT (name) DO NOTHING;
 
--- Initial Sample NOC Records
+-- 2. Default Custom Contractors
+INSERT INTO public.noc_custom_contractors (name)
+VALUES
+    ('APEX ENGINEERING & INFRASTRUCTURE LTD.'),
+    ('TRANS-GULF CONTRACTING CO.'),
+    ('PIONEER DEMOLITION SPECIALISTS LLC'),
+    ('SKYLINE ELECTROMECHANICAL SERVICES'),
+    ('METROPOLITAN BUILDERS CORP.'),
+    ('AL JABER BUILDING LLC'),
+    ('ARABTEC CONSTRUCTION'),
+    ('SIX CONSTRUCT')
+ON CONFLICT (name) DO NOTHING;
+
+-- 3. Initial Sample NOC Records
 INSERT INTO public.noc_records (id, noc_number, noc_type, client, issued_to, company_code, date_of_issuance, date_of_expiration, description, documents)
 VALUES 
 (
@@ -17,7 +30,7 @@ VALUES
     'NOC-2026-0042',
     'Activity NOC',
     'Municipal Urban Development Authority',
-    'Apex Engineering & Infrastructure Ltd.',
+    'APEX ENGINEERING & INFRASTRUCTURE LTD.',
     'APEX-01',
     '2026-01-15',
     '2026-12-31',
@@ -29,7 +42,7 @@ VALUES
     'NOC-2026-0118',
     'Activity',
     'National Highway Authority',
-    'Trans-Gulf Contracting Co.',
+    'TRANS-GULF CONTRACTING CO.',
     'TG-2026',
     '2026-07-01',
     '2026-09-10',
@@ -41,7 +54,7 @@ VALUES
     'NOC-2025-0891',
     'Activity NOC',
     'Vertex Commercial Properties',
-    'Pioneer Demolition Specialists LLC',
+    'PIONEER DEMOLITION SPECIALISTS LLC',
     NULL,
     '2025-05-10',
     '2026-05-10',
@@ -53,7 +66,7 @@ VALUES
     'NOC-2026-0205',
     'Activity',
     'State Water & Power Dept.',
-    'Skyline Electromechanical Services',
+    'SKYLINE ELECTROMECHANICAL SERVICES',
     'SKY-04',
     '2026-03-20',
     '2027-03-20',
@@ -65,7 +78,7 @@ VALUES
     'NOC-2026-0310',
     'Activity NOC',
     'Grand Plaza Shopping Mall',
-    'Metropolitan Builders Corp.',
+    'METROPOLITAN BUILDERS CORP.',
     NULL,
     '2026-06-01',
     '2026-11-30',
@@ -75,9 +88,12 @@ VALUES
 ON CONFLICT (noc_number) DO UPDATE
 SET client = EXCLUDED.client,
     issued_to = EXCLUDED.issued_to,
-    company_code = EXCLUDED.company_code;
+    company_code = EXCLUDED.company_code,
+    date_of_issuance = EXCLUDED.date_of_issuance,
+    date_of_expiration = EXCLUDED.date_of_expiration,
+    description = EXCLUDED.description;
 
--- Initial User Accounts
+-- 4. Initial User Accounts
 INSERT INTO public.noc_users (username, password, role, display_name, email)
 VALUES
     ('ryan', 'SBYIM@2026', 'developer', 'Ryan (Developer)', 'ryan@nocportal.gov'),

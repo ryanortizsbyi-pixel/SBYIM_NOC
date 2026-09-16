@@ -279,10 +279,28 @@ class NOCDatabase {
         const { data, error } = await client
           .from('noc_records')
           .select('*')
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(5000);
 
         if (error) throw error;
-        return (data || []).map(row => this.mapDbToRecord(row));
+
+        // If Supabase returned records, return them and cache locally
+        if (data && data.length > 0) {
+          const records = data.map(row => this.mapDbToRecord(row));
+          // Update local IndexedDB cache in background
+          this._localBulkInsert(records).catch(() => {});
+          return records;
+        }
+
+        // If Supabase is connected but empty, check if local storage/IndexedDB has records (e.g. 431 records)
+        const localRecords = await this._localGetAll();
+        if (localRecords && localRecords.length > 0) {
+          console.log(`Supabase database table is empty. Auto-syncing ${localRecords.length} local records to Supabase...`);
+          this.syncLocalToSupabase().catch(e => console.warn('Background auto-sync to Supabase warning:', e));
+          return localRecords;
+        }
+
+        return [];
       } catch (err) {
         console.warn('Supabase getAll failed, falling back to local DB:', err.message);
       }
@@ -472,11 +490,17 @@ class NOCDatabase {
       try {
         const client = this.getSupabaseClient();
         const dbRows = records.map(r => this.mapRecordToDb(r));
-        const { error } = await client
-          .from('noc_records')
-          .upsert(dbRows, { onConflict: 'id' });
-
-        if (error) throw error;
+        const BATCH_SIZE = 25;
+        for (let i = 0; i < dbRows.length; i += BATCH_SIZE) {
+          const batch = dbRows.slice(i, i + BATCH_SIZE);
+          const { error } = await client
+            .from('noc_records')
+            .upsert(batch, { onConflict: 'id' });
+          if (error) {
+            console.error(`Supabase bulkInsert batch error (${i}-${i + batch.length}):`, error);
+            throw error;
+          }
+        }
       } catch (err) {
         console.warn('Supabase bulkInsert failed, writing locally:', err.message);
       }
@@ -993,9 +1017,112 @@ class NOCDatabase {
           }
         }
       }
+
+      // Also sync renames to Supabase noc_settings table
+      if (this.isSupabaseActive()) {
+        try {
+          const client = this.getSupabaseClient();
+          await client.from('noc_settings').upsert({
+            key: 'noc_contractor_renames',
+            value: renames,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'key' });
+        } catch (e) {
+          console.warn('Supabase contractor renames sync note:', e);
+        }
+      }
     } catch (e) {
       console.warn('Could not update contractor in localStorage', e);
     }
+  }
+
+  /**
+   * Retrieve all saved contractor rename mappings (from Supabase or localStorage)
+   */
+  async getContractorRenames() {
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { data, error } = await client
+          .from('noc_settings')
+          .select('value')
+          .eq('key', 'noc_contractor_renames')
+          .maybeSingle();
+
+        if (!error && data && data.value) {
+          try {
+            localStorage.setItem('noc_contractor_renames', JSON.stringify(data.value));
+          } catch (e) {}
+          return data.value;
+        }
+      } catch (e) {
+        console.warn('Supabase getContractorRenames failed, reading local:', e.message);
+      }
+    }
+
+    try {
+      const stored = localStorage.getItem('noc_contractor_renames');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {}
+    return {};
+  }
+
+  /**
+   * Generic setting getter (Supabase + localStorage fallback)
+   */
+  async getSetting(key, defaultValue = null) {
+    if (!key) return defaultValue;
+
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { data, error } = await client
+          .from('noc_settings')
+          .select('value')
+          .eq('key', key)
+          .maybeSingle();
+
+        if (!error && data && data.value !== undefined) {
+          return data.value;
+        }
+      } catch (e) {
+        console.warn(`Supabase getSetting(${key}) failed:`, e.message);
+      }
+    }
+
+    try {
+      const stored = localStorage.getItem(`noc_setting_${key}`);
+      if (stored !== null) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {}
+    return defaultValue;
+  }
+
+  /**
+   * Generic setting setter (Supabase + localStorage)
+   */
+  async saveSetting(key, value) {
+    if (!key) return;
+
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        await client.from('noc_settings').upsert({
+          key: key,
+          value: value,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'key' });
+      } catch (e) {
+        console.warn(`Supabase saveSetting(${key}) failed:`, e.message);
+      }
+    }
+
+    try {
+      localStorage.setItem(`noc_setting_${key}`, JSON.stringify(value));
+    } catch (e) {}
   }
 
   // ==========================================================================
@@ -1232,7 +1359,7 @@ class NOCDatabase {
   /**
    * Push all current local data directly to Supabase
    */
-  async syncLocalToSupabase() {
+  async syncLocalToSupabase(onProgress = null) {
     if (!this.isSupabaseActive()) {
       throw new Error('Supabase client is not connected. Please configure your Project URL & Anon Key first.');
     }
@@ -1245,6 +1372,7 @@ class NOCDatabase {
     const localTypes = await this.getCustomTypes();
     const localContractors = await this.getCustomContractors();
     const localUsers = await this.getUsers();
+    const localRenames = await this.getContractorRenames();
 
     const stats = {
       recordsSynced: 0,
@@ -1253,18 +1381,29 @@ class NOCDatabase {
       aiDocsSynced: 0,
       typesSynced: 0,
       contractorsSynced: 0,
-      usersSynced: 0
+      usersSynced: 0,
+      settingsSynced: 0
     };
 
-    // 1. Sync NOC Records
+    // 1. Sync NOC Records in safe batches of 25 (handles 431+ records with attachments)
     if (localRecords && localRecords.length > 0) {
       const dbRows = localRecords.map(r => this.mapRecordToDb(r));
-      const { error: recError } = await client
-        .from('noc_records')
-        .upsert(dbRows, { onConflict: 'id' });
+      const BATCH_SIZE = 25;
+      for (let i = 0; i < dbRows.length; i += BATCH_SIZE) {
+        const batch = dbRows.slice(i, i + BATCH_SIZE);
+        const { error: recError } = await client
+          .from('noc_records')
+          .upsert(batch, { onConflict: 'id' });
 
-      if (recError) throw new Error(`Failed syncing NOC records: ${recError.message}`);
-      stats.recordsSynced = dbRows.length;
+        if (recError) {
+          console.error(`Batch sync error (${i}-${i + batch.length}):`, recError);
+          throw new Error(`Failed syncing NOC records batch (${i + 1}-${i + batch.length}): ${recError.message}`);
+        }
+        stats.recordsSynced += batch.length;
+        if (typeof onProgress === 'function') {
+          onProgress({ stage: 'records', current: stats.recordsSynced, total: dbRows.length });
+        }
+      }
     }
 
     // 2. Sync Requirement Documents
@@ -1334,6 +1473,24 @@ class NOCDatabase {
       if (!userError) {
         stats.usersSynced = userRows.length;
       }
+    }
+
+    // 8. Sync General Settings & Contractor Renames
+    try {
+      const settingsPayload = [
+        { key: 'noc_contractor_renames', value: localRenames },
+        { key: 'noc_custom_types', value: localTypes },
+        { key: 'noc_custom_contractors', value: localContractors }
+      ];
+      const { error: settingsError } = await client
+        .from('noc_settings')
+        .upsert(settingsPayload, { onConflict: 'key' });
+
+      if (!settingsError) {
+        stats.settingsSynced = settingsPayload.length;
+      }
+    } catch (e) {
+      console.warn('Sync settings note:', e);
     }
 
     return stats;

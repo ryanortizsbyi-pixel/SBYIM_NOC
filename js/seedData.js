@@ -389,16 +389,161 @@ const DEFAULT_SBYI_COC_DOCS = [
   }
 ];
 
+// Default Custom Contractors & Companies
+const DEFAULT_CUSTOM_CONTRACTORS = [
+  'APEX ENGINEERING & INFRASTRUCTURE LTD.',
+  'TRANS-GULF CONTRACTING CO.',
+  'PIONEER DEMOLITION SPECIALISTS LLC',
+  'SKYLINE ELECTROMECHANICAL SERVICES',
+  'METROPOLITAN BUILDERS CORP.',
+  'AL JABER BUILDING LLC',
+  'ARABTEC CONSTRUCTION',
+  'SIX CONSTRUCT'
+];
+
+// Default Custom NOC Types
+const DEFAULT_CUSTOM_TYPES = [
+  'Activity',
+  'Activity NOC'
+];
+
 /**
- * Seeds the database if empty on startup.
+ * Restores all system dataset stores (NOC Records, Requirements Docs, COC Docs, Custom Types, Contractors, Users)
+ * and synchronizes them directly with Supabase if active.
+ */
+async function restoreAllData(forceRestore = false) {
+  console.log('Restoring all system datasets...');
+  const stats = {
+    records: 0,
+    reqDocs: 0,
+    cocDocs: 0,
+    types: 0,
+    contractors: 0,
+    users: 0,
+    supabaseSynced: false
+  };
+
+  try {
+    // 1. Restore NOC Records (IndexedDB + localStorage)
+    const localRecords = await window.nocDB._localGetAll();
+    if (forceRestore || !localRecords || localRecords.length === 0) {
+      await window.nocDB._localBulkInsert(INITIAL_NOC_SEED_DATA);
+      try {
+        localStorage.setItem('noc_records_v1', JSON.stringify(INITIAL_NOC_SEED_DATA));
+      } catch (e) {}
+      stats.records = INITIAL_NOC_SEED_DATA.length;
+    } else {
+      stats.records = localRecords.length;
+    }
+
+    // 2. Restore Requirements Documents
+    const reqDocs = await window.nocDB.getRequirementsDocs();
+    if (forceRestore || !reqDocs || reqDocs.length === 0) {
+      await window.nocDB.saveRequirementsDocs(DEFAULT_NOC_REQUIREMENTS_DOCS);
+      stats.reqDocs = DEFAULT_NOC_REQUIREMENTS_DOCS.length;
+    } else {
+      stats.reqDocs = reqDocs.length;
+    }
+
+    // 3. Restore SBYI COC Documents
+    const cocDocs = await window.nocDB.getCocDocs();
+    if (forceRestore || !cocDocs || cocDocs.length === 0) {
+      await window.nocDB.saveCocDocs(DEFAULT_SBYI_COC_DOCS);
+      stats.cocDocs = DEFAULT_SBYI_COC_DOCS.length;
+    } else {
+      stats.cocDocs = cocDocs.length;
+    }
+
+    // 4. Restore Custom Types
+    const customTypes = await window.nocDB.getCustomTypes();
+    if (forceRestore || !customTypes || customTypes.length === 0) {
+      for (const t of DEFAULT_CUSTOM_TYPES) {
+        await window.nocDB.saveCustomType(t);
+      }
+      stats.types = DEFAULT_CUSTOM_TYPES.length;
+    } else {
+      stats.types = customTypes.length;
+    }
+
+    // 5. Restore Custom Contractors
+    const customContractors = await window.nocDB.getCustomContractors();
+    if (forceRestore || !customContractors || customContractors.length === 0) {
+      for (const c of DEFAULT_CUSTOM_CONTRACTORS) {
+        await window.nocDB.saveCustomContractor(c);
+      }
+      stats.contractors = DEFAULT_CUSTOM_CONTRACTORS.length;
+    } else {
+      stats.contractors = customContractors.length;
+    }
+
+    // 6. Restore Users
+    const users = await window.nocDB.getUsers();
+    if (forceRestore || !users || users.length === 0) {
+      const defaultUsers = window.nocDB.getDefaultUsers();
+      for (const u of defaultUsers) {
+        await window.nocDB.saveUser(u);
+      }
+      stats.users = defaultUsers.length;
+    } else {
+      stats.users = users.length;
+    }
+
+    // 7. If Supabase is active, push and synchronize all collections immediately
+    if (window.nocDB && window.nocDB.isSupabaseActive()) {
+      try {
+        const syncStats = await window.nocDB.syncLocalToSupabase();
+        stats.supabaseSynced = true;
+        stats.syncStats = syncStats;
+        console.log('Restoration pushed directly to Supabase cloud PostgreSQL:', syncStats);
+      } catch (err) {
+        console.warn('Supabase cloud push during restore failed:', err.message);
+      }
+    }
+
+    // 8. Re-sync AI knowledge base
+    if (window.sbyimKnowledgeBase) {
+      window.sbyimKnowledgeBase.syncKnowledgeBase().then(() => {
+        if (window.sbyimAIUI) window.sbyimAIUI.updateKnowledgeStatusBadge();
+      }).catch(() => {});
+    }
+
+    return stats;
+  } catch (err) {
+    console.error('Error during full data restoration:', err);
+    throw err;
+  }
+}
+
+/**
+ * Seeds the database if empty on startup and connects/syncs with Supabase.
  */
 async function seedInitialDatabaseIfEmpty() {
   try {
-    const existing = await window.nocDB.getAll();
-    if (!existing || existing.length === 0) {
-      console.log('Seeding initial NOC records...');
-      await window.nocDB.bulkInsert(INITIAL_NOC_SEED_DATA);
+    const isSupabase = window.nocDB && window.nocDB.isSupabaseActive();
+    const localRecords = await window.nocDB._localGetAll();
+    
+    // If local records are missing or empty, do full initial restore
+    if (!localRecords || localRecords.length === 0) {
+      console.log('Local database is empty. Restoring complete initial seed dataset...');
+      await restoreAllData(true);
       return true;
+    }
+    
+    // Ensure all other collections (requirements, COC docs, contractors, types, users) are populated
+    await restoreAllData(false);
+
+    // If Supabase is active, ensure cloud database is populated
+    if (isSupabase) {
+      try {
+        const client = window.nocDB.getSupabaseClient();
+        const { data, error } = await client.from('noc_records').select('id').limit(1);
+        if (!error && (!data || data.length === 0)) {
+          console.log('Supabase database table is empty. Syncing local dataset to Supabase...');
+          await window.nocDB.syncLocalToSupabase();
+        }
+      } catch (err) {
+        console.warn('Supabase auto-sync check note:', err);
+      }
     }
   } catch (err) {
     console.error('Seed data initialization error:', err);
@@ -408,5 +553,8 @@ async function seedInitialDatabaseIfEmpty() {
 
 window.DEFAULT_NOC_REQUIREMENTS_DOCS = DEFAULT_NOC_REQUIREMENTS_DOCS;
 window.DEFAULT_SBYI_COC_DOCS = DEFAULT_SBYI_COC_DOCS;
+window.DEFAULT_CUSTOM_CONTRACTORS = DEFAULT_CUSTOM_CONTRACTORS;
+window.DEFAULT_CUSTOM_TYPES = DEFAULT_CUSTOM_TYPES;
+window.restoreAllData = restoreAllData;
 window.seedInitialDatabaseIfEmpty = seedInitialDatabaseIfEmpty;
 window.INITIAL_NOC_SEED_DATA = INITIAL_NOC_SEED_DATA;

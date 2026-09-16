@@ -1535,6 +1535,7 @@ class NOCApp {
     const btnTestSupabaseConnection = document.getElementById('btnTestSupabaseConnection');
     const btnClearSupabaseConfig = document.getElementById('btnClearSupabaseConfig');
     const btnSyncToSupabase = document.getElementById('btnSyncToSupabase');
+    const btnRestoreAllData = document.getElementById('btnRestoreAllData');
     const btnCopySqlSchema = document.getElementById('btnCopySqlSchema');
 
     if (btnDatabaseConfig) {
@@ -1639,6 +1640,34 @@ class NOCApp {
       });
     }
 
+    // Restore All Data & Connect to Supabase
+    if (btnRestoreAllData) {
+      btnRestoreAllData.addEventListener('click', async () => {
+        if (!confirm('This will restore all default NOC certificates, requirements guidelines, SBYI COC files, categories, contractors, and users, and synchronize them with Supabase. Proceed?')) {
+          return;
+        }
+
+        btnRestoreAllData.disabled = true;
+        btnRestoreAllData.textContent = 'Restoring...';
+
+        try {
+          const stats = await window.restoreAllData(true);
+          const isDb = window.nocDB && window.nocDB.isSupabaseActive();
+          window.showToast(`All data restored! ${stats.records} NOC records, ${stats.reqDocs} guidelines, ${stats.cocDocs} COC documents, ${stats.types} types, ${stats.contractors} contractors & ${stats.users} user accounts are active${isDb ? ' and synced to Supabase PostgreSQL' : ''}.`, 'success');
+          await this.refreshData();
+          this.populateTypeFilterOptions();
+          this.populateFormTypeOptions('');
+          this.populateFormContractorOptions('');
+          window.nocUI.renderDatabaseStatus();
+        } catch (err) {
+          window.showToast('Restoration error: ' + err.message, 'error');
+        } finally {
+          btnRestoreAllData.disabled = false;
+          btnRestoreAllData.textContent = '🔄 Restore All Data';
+        }
+      });
+    }
+
     // 1-Click Sync Local Records to Supabase
     if (btnSyncToSupabase) {
       btnSyncToSupabase.addEventListener('click', async () => {
@@ -1648,10 +1677,14 @@ class NOCApp {
         }
 
         btnSyncToSupabase.disabled = true;
-        btnSyncToSupabase.textContent = 'Syncing...';
+        btnSyncToSupabase.textContent = 'Syncing records...';
 
         try {
-          const stats = await window.nocDB.syncLocalToSupabase();
+          const stats = await window.nocDB.syncLocalToSupabase((prog) => {
+            if (prog && prog.stage === 'records') {
+              btnSyncToSupabase.textContent = `Syncing (${prog.current}/${prog.total})...`;
+            }
+          });
           window.showToast(`Sync successful! ${stats.recordsSynced} records, ${stats.reqDocsSynced} guidelines, ${stats.cocDocsSynced || 0} COC docs, ${stats.aiDocsSynced || 0} AI docs, ${stats.typesSynced || 0} types, ${stats.contractorsSynced || 0} contractors & ${stats.usersSynced || 0} users pushed to Supabase.`, 'success');
           await this.refreshData();
         } catch (err) {
