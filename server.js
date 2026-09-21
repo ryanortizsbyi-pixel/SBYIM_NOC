@@ -89,9 +89,9 @@ const pool = new Pool({
     ca: caCert,
     rejectUnauthorized: false
   },
-  max: 5,
-  idleTimeoutMillis: 10000,
-  connectionTimeoutMillis: 5000,
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 15000,
   allowExitOnIdle: true
 });
 
@@ -614,7 +614,7 @@ app.post('/api/records/bulk-delete', async (req, res) => {
     }
     const result = await pool.query('DELETE FROM public.noc_records WHERE id::text = ANY($1::text[])', [ids]);
     invalidateRecordsCache();
-    await loadLightweightRecordsFromDb().catch(() => {});
+    loadLightweightRecordsFromDb().catch(() => {});
     res.json({ success: true, deleted: result.rowCount });
   } catch (err) {
     const errorDetails = logDatabaseError('POST /api/records/bulk-delete', err);

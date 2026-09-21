@@ -1050,17 +1050,19 @@ class NOCDatabase {
   async bulkDelete(ids = []) {
     if (!Array.isArray(ids) || ids.length === 0) return { success: true, count: 0 };
 
+    const cleanIds = ids.map(String);
     const deletedBy = (window.nocAuth && window.nocAuth.currentUser && (window.nocAuth.currentUser.displayName || window.nocAuth.currentUser.username)) || 'System Administrator';
     const deletedAt = new Date().toISOString();
-    const idSet = new Set(ids.map(String));
+    const idSet = new Set(cleanIds);
 
     // 0. Invalidate in-memory cache immediately
     if (this._memoryCache && Array.isArray(this._memoryCache)) {
       this._memoryCache = this._memoryCache.filter(r => !idSet.has(String(r.id)));
     }
+    this._cacheTimestamp = 0;
 
     // 1. Archive each record to local Recycle Bin
-    for (const id of ids) {
+    for (const id of cleanIds) {
       try {
         const rec = await this.getById(id) || await this._localGetById(id);
         if (rec) {
@@ -1080,16 +1082,20 @@ class NOCDatabase {
         const res = await fetch(this.getApiUrl('/api/records/bulk-delete'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids, deletedBy })
+          body: JSON.stringify({ ids: cleanIds, deletedBy })
         });
         if (res.ok) {
-          for (const id of ids) {
+          for (const id of cleanIds) {
             await this._localDelete(id).catch(() => {});
           }
-          return { success: true, count: ids.length };
+          return { success: true, count: cleanIds.length };
+        } else {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.error || `Server responded with status ${res.status}`);
         }
       } catch (err) {
-        console.warn('Aiven bulk delete failed:', err.message);
+        console.error('Aiven bulk delete error:', err);
+        throw err;
       }
     }
 
@@ -1100,23 +1106,24 @@ class NOCDatabase {
         const { error } = await client
           .from('noc_records')
           .delete()
-          .in('id', ids);
+          .in('id', cleanIds);
 
         if (error) throw error;
-        for (const id of ids) {
+        for (const id of cleanIds) {
           await this._localDelete(id).catch(() => {});
         }
-        return { success: true, count: ids.length };
+        return { success: true, count: cleanIds.length };
       } catch (err) {
         console.warn('Supabase bulk delete failed:', err.message);
+        throw err;
       }
     }
 
     // 4. Local IndexedDB fallback bulk delete
-    for (const id of ids) {
+    for (const id of cleanIds) {
       await this._localDelete(id).catch(() => {});
     }
-    return { success: true, count: ids.length };
+    return { success: true, count: cleanIds.length };
   }
 
   /**
