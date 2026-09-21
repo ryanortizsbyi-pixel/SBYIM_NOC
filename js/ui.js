@@ -725,6 +725,7 @@ class UIManager {
 
     const isAdmin = window.nocAuth.isAdmin();
     const isDeveloper = window.nocAuth && window.nocAuth.isDeveloper && window.nocAuth.isDeveloper();
+    const canBulkDelete = window.nocAuth && window.nocAuth.canBulkDelete && window.nocAuth.canBulkDelete();
     const canViewClient = window.nocAuth && window.nocAuth.canViewClient ? window.nocAuth.canViewClient() : false;
     const canViewNocType = window.nocAuth && window.nocAuth.canViewNocType ? window.nocAuth.canViewNocType() : false;
     const canViewCompanyCode = window.nocAuth && window.nocAuth.canViewCompanyCode ? window.nocAuth.canViewCompanyCode() : false;
@@ -736,7 +737,7 @@ class UIManager {
     const thTableDesc = document.getElementById('thTableDesc');
     const thTableActions = document.getElementById('thTableActions');
 
-    if (thTableSelectAll) thTableSelectAll.style.display = isDeveloper ? '' : 'none';
+    if (thTableSelectAll) thTableSelectAll.style.display = canBulkDelete ? '' : 'none';
     if (thTableNocType) thTableNocType.style.display = canViewNocType ? '' : 'none';
     if (thTableClient) thTableClient.style.display = canViewClient ? '' : 'none';
     if (thTableDesc) thTableDesc.style.display = '';
@@ -757,7 +758,7 @@ class UIManager {
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="developer-select-col" style="${isDeveloper ? '' : 'display:none;'} text-align:center;">
+        <td class="developer-select-col" style="${canBulkDelete ? '' : 'display:none;'} text-align:center;">
           <input type="checkbox" class="noc-row-checkbox noc-select-checkbox" data-id="${rec.id}" ${isSelected ? 'checked' : ''} title="Select record">
         </td>
         <td style="white-space:nowrap;">${this.escapeHTML(rec.nocNumber)}</td>
@@ -808,6 +809,7 @@ class UIManager {
 
     const isAdmin = window.nocAuth.isAdmin();
     const isDeveloper = window.nocAuth && window.nocAuth.isDeveloper && window.nocAuth.isDeveloper();
+    const canBulkDelete = window.nocAuth && window.nocAuth.canBulkDelete && window.nocAuth.canBulkDelete();
     const canViewClient = window.nocAuth && window.nocAuth.canViewClient ? window.nocAuth.canViewClient() : false;
     const canViewNocType = window.nocAuth && window.nocAuth.canViewNocType ? window.nocAuth.canViewNocType() : false;
     const canViewCompanyCode = window.nocAuth && window.nocAuth.canViewCompanyCode ? window.nocAuth.canViewCompanyCode() : false;
@@ -831,7 +833,7 @@ class UIManager {
       card.className = 'noc-card';
       card.style.position = 'relative';
       card.innerHTML = `
-        ${isDeveloper ? `
+        ${canBulkDelete ? `
         <div class="card-grid-select developer-select-col">
           <input type="checkbox" class="noc-grid-checkbox noc-select-checkbox" data-id="${rec.id}" ${isSelected ? 'checked' : ''} title="Select record">
         </div>
@@ -1417,12 +1419,12 @@ class UIManager {
   }
 
   /**
-   * Open Bulk Delete Confirmation Modal (Developer Only)
+   * Open Bulk Delete Confirmation Modal (Admin & Developer)
    */
   openBulkDeleteModal() {
-    const isDeveloper = window.nocAuth && window.nocAuth.isDeveloper && window.nocAuth.isDeveloper();
-    if (!isDeveloper) {
-      this.showToast('Developer role required for bulk deletion.', 'error');
+    const canBulkDelete = window.nocAuth && window.nocAuth.canBulkDelete && window.nocAuth.canBulkDelete();
+    if (!canBulkDelete) {
+      this.showToast('Administrator or Developer privileges required for bulk deletion.', 'error');
       return;
     }
 
@@ -1494,7 +1496,7 @@ class UIManager {
    * Update selection UI elements (counts, buttons, floating bar, select-all state)
    */
   updateSelectionUI() {
-    const isDeveloper = window.nocAuth && window.nocAuth.isDeveloper && window.nocAuth.isDeveloper();
+    const canBulkDelete = window.nocAuth && window.nocAuth.canBulkDelete && window.nocAuth.canBulkDelete();
     const count = this.selectedRecordIds ? this.selectedRecordIds.size : 0;
 
     const bulkBtn = document.getElementById('btnBulkDeleteNoc');
@@ -1507,20 +1509,20 @@ class UIManager {
     if (floatingCountEl) floatingCountEl.textContent = count;
 
     if (bulkBtn) {
-      bulkBtn.style.display = isDeveloper ? 'inline-flex' : 'none';
+      bulkBtn.style.display = canBulkDelete ? 'inline-flex' : 'none';
       bulkBtn.disabled = (count === 0);
     }
 
     if (floatingBar) {
-      floatingBar.style.display = (isDeveloper && count > 0) ? 'block' : 'none';
+      floatingBar.style.display = (canBulkDelete && count > 0) ? 'block' : 'none';
     }
 
     if (thSelectAll) {
-      thSelectAll.style.display = isDeveloper ? '' : 'none';
+      thSelectAll.style.display = canBulkDelete ? '' : 'none';
     }
 
     document.querySelectorAll('.developer-select-col').forEach(el => {
-      el.style.display = isDeveloper ? '' : 'none';
+      el.style.display = canBulkDelete ? '' : 'none';
     });
 
     // Update Select All Checkbox state

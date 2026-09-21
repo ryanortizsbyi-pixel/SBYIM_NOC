@@ -308,7 +308,7 @@ class AuthManager {
   }
 
   canBulkDelete() {
-    return this.isDeveloper();
+    return Boolean(this.currentUser && (this.currentUser.role === 'admin' || this.currentUser.role === 'developer'));
   }
 
   canViewClient() {

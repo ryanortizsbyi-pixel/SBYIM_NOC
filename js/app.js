@@ -2251,9 +2251,9 @@ class NOCApp {
    * Bulk delete selected records (Developer only)
    */
   async bulkDeleteSelected() {
-    const isDeveloper = window.nocAuth && window.nocAuth.isDeveloper && window.nocAuth.isDeveloper();
-    if (!isDeveloper) {
-      window.showToast('Developer role required for bulk deletion.', 'error');
+    const canDelete = window.nocAuth && window.nocAuth.canBulkDelete && window.nocAuth.canBulkDelete();
+    if (!canDelete) {
+      window.showToast('Administrator or Developer privileges required for bulk deletion.', 'error');
       return;
     }
 
