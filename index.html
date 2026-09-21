@@ -45,7 +45,7 @@
         </button>
 
         <div class="user-role-badge is-unauthenticated" id="userRoleBadge" title="Current access mode">
-          <button class="btn btn-header-signin" id="btnHeaderSignIn" title="Click to sign in to the portal">
+          <button class="btn btn-header-signin" id="btnHeaderSignIn" onclick="if(window.nocUI){window.nocUI.openLoginModal(true);}" title="Click to sign in to the portal">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
               <path d="m9 12 2 2 4-4"></path>
@@ -206,6 +206,15 @@
         </div>
 
         <div class="filters-group">
+          <!-- Developer Bulk Actions Button -->
+          <button class="btn btn-danger btn-bulk-delete" id="btnBulkDeleteNoc" style="display:none;" disabled title="Bulk delete selected NOC records (Developer Only)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            <span>Bulk Delete (<span id="bulkDeleteSelectedCount">0</span>)</span>
+          </button>
+
           <select id="filterStatus" class="select-filter">
             <option value="all">All Statuses</option>
             <option value="active">Active Only</option>
@@ -245,6 +254,9 @@
         <table class="noc-table" id="nocDataTable">
           <thead>
             <tr>
+              <th id="thTableSelectAll" class="developer-select-col" style="display:none; width:44px; text-align:center;">
+                <input type="checkbox" id="selectAllNocCheckbox" class="noc-select-checkbox" title="Select / Deselect all visible records">
+              </th>
               <th>NOC Number</th>
               <th id="thTableNocType" style="display:none;">NOC Type</th>
               <th id="thTableClient" style="display:none;">Client</th>
@@ -290,9 +302,37 @@
       <div class="empty-icon landing-welcome-icon" style="background:var(--secondary-blue-light, #E0F2FE); color:var(--secondary-blue, #0284C7);">🔍</div>
       <h3 class="empty-title">Welcome to SBYIM NOC Portal</h3>
       <p class="empty-text">Please sign in to access, search, and view certificate compliance records.</p>
+      <div style="margin-top: 1.25rem;">
+        <button type="button" class="btn btn-primary btn-header-signin" id="btnLandingSignIn" style="padding: 0.65rem 1.4rem; font-size: 0.95rem; display: inline-flex; align-items: center; gap: 0.5rem; border-radius: var(--radius-md); box-shadow: var(--shadow-md); font-weight: 600; cursor: pointer;" onclick="if(window.nocUI){window.nocUI.openLoginModal(true);}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            <path d="m9 12 2 2 4-4"></path>
+          </svg>
+          <span>Sign In to Access NOC Portal</span>
+        </button>
+      </div>
     </section>
 
-
+    <!-- Floating Bulk Actions Banner (Developer Only) -->
+    <div class="bulk-selection-floating-bar" id="bulkSelectionFloatingBar" style="display:none;">
+      <div class="bulk-floating-content">
+        <div class="bulk-floating-info">
+          <span class="bulk-floating-badge" id="bulkFloatingCount">0</span>
+          <span class="bulk-floating-text">selected</span>
+        </div>
+        <div class="bulk-floating-actions">
+          <button type="button" class="btn btn-sm btn-outline" id="btnSelectAllVisible" style="background:#fff; color:var(--text-main); font-weight:600; padding:0.3rem 0.75rem; font-size:0.8rem;">Select Visible</button>
+          <button type="button" class="btn btn-sm btn-outline" id="btnDeselectAllRecords" style="background:#fff; color:var(--text-main); font-weight:600; padding:0.3rem 0.75rem; font-size:0.8rem;">Clear</button>
+          <button type="button" class="btn btn-sm btn-danger btn-bulk-delete" id="btnFloatingBulkDelete" style="padding:0.3rem 0.85rem; font-size:0.8rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            Delete Selected
+          </button>
+        </div>
+      </div>
+    </div>
 
   </main>
 
@@ -476,6 +516,43 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-outline" id="btnCancelDelete">Cancel</button>
         <button type="button" class="btn btn-danger" id="btnConfirmDelete">Delete Record</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3.1 Bulk Delete Confirmation Modal (Developer Only) -->
+  <div class="modal-overlay" id="bulkDeleteConfirmModal">
+    <div class="modal-container medium">
+      <div class="modal-header">
+        <h3 class="modal-title" style="color:#DC2626; display:flex; align-items:center; gap:0.5rem;">
+          <span>🗑️</span>
+          <span>Confirm Bulk Deletion</span>
+        </h3>
+        <button class="modal-close" id="btnCloseBulkDeleteModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:#FEF2F2; border:1px solid #FEE2E2; border-radius:var(--radius-md); padding:1rem; margin-bottom:1.25rem;">
+          <p style="font-size:0.95rem; color:#991B1B; line-height:1.5; margin:0; font-weight:600;">
+            ⚠️ You are about to bulk delete <span id="bulkDeleteConfirmCount" style="text-decoration:underline;">0</span> selected NOC record(s).
+          </p>
+          <p style="font-size:0.85rem; color:#B91C1C; margin:0.4rem 0 0 0;">
+            All selected records and their associated documents will be safely archived into the Recycle Bin.
+          </p>
+        </div>
+        
+        <div style="font-size:0.85rem; font-weight:700; color:var(--text-main); margin-bottom:0.5rem;">
+          Selected Records Preview:
+        </div>
+        <div id="bulkDeleteRecordsList" style="max-height:180px; overflow-y:auto; border:1px solid var(--border-light); border-radius:var(--radius-sm); padding:0.5rem 0.75rem; background:var(--bg-subtle); font-size:0.82rem; font-family:'JetBrains Mono', monospace; line-height:1.6; color:var(--text-main);">
+          <!-- Dynamic items preview -->
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:0.8rem; color:var(--text-muted);">Access Role: <strong style="color:#8B5CF6;">Developer</strong></span>
+        <div style="display:flex; gap:0.5rem;">
+          <button type="button" class="btn btn-outline" id="btnCancelBulkDelete">Cancel</button>
+          <button type="button" class="btn btn-danger" id="btnConfirmBulkDelete">Confirm Bulk Delete</button>
+        </div>
       </div>
     </div>
   </div>

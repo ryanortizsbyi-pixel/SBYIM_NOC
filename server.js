@@ -2,12 +2,16 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Enable HTTP GZIP response compression for lightning-fast JSON delivery
+app.use(compression());
 
 // Middleware with extended payload limit for document attachments
 app.use(cors());
@@ -92,7 +96,62 @@ async function initTables() {
     console.warn('Table initialization note:', err.message);
   }
 }
-initTables();
+// ============================================================================
+// IN-MEMORY CACHE & LIGHTWEIGHT RECORDS PROJECTION
+// ============================================================================
+
+let cachedLightweightRecords = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 60 * 1000; // 60s background refresh TTL
+
+async function loadLightweightRecordsFromDb() {
+  const query = `
+    SELECT 
+      id, noc_number, noc_type, client, issued_to, company_code,
+      date_of_issuance, date_of_expiration, description, created_at, updated_at,
+      COALESCE((
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'id', d->>'id',
+            'name', d->>'name',
+            'type', d->>'type',
+            'size', d->>'size',
+            'uploadedAt', d->>'uploadedAt',
+            'uploadedBy', d->>'uploadedBy'
+          )
+        )
+        FROM jsonb_array_elements(
+          CASE 
+            WHEN jsonb_typeof(documents::jsonb) = 'array' THEN documents::jsonb 
+            ELSE '[]'::jsonb 
+          END
+        ) AS d
+      ), '[]'::jsonb) AS documents
+    FROM public.noc_records
+    ORDER BY created_at DESC
+    LIMIT 5000;
+  `;
+  try {
+    const result = await pool.query(query);
+    cachedLightweightRecords = result.rows.map(row => mapDbToRecord(row));
+    cacheTimestamp = Date.now();
+    return cachedLightweightRecords;
+  } catch (err) {
+    console.error('Error loading lightweight records cache from DB:', err.message);
+    if (!cachedLightweightRecords) cachedLightweightRecords = [];
+    return cachedLightweightRecords;
+  }
+}
+
+function invalidateRecordsCache() {
+  cachedLightweightRecords = null;
+  cacheTimestamp = 0;
+}
+
+// Warm cache in background on server boot
+initTables().then(() => {
+  loadLightweightRecordsFromDb().catch(() => {});
+});
 
 // ============================================================================
 // DATA MAPPERS (PostgreSQL snake_case <-> Frontend camelCase)
@@ -425,10 +484,38 @@ app.post('/api/records/bulk', async (req, res) => {
 
 app.post('/api/records/bulk-delete', async (req, res) => {
   const ids = req.body.ids || [];
+  const deletedBy = req.body.deletedBy || 'Developer';
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ success: false, error: 'IDs array required' });
   }
   try {
+    // 1. Fetch records to archive into noc_deleted_records
+    const fetchRes = await pool.query('SELECT * FROM public.noc_records WHERE id = ANY($1)', [ids]);
+    for (const r of fetchRes.rows) {
+      await pool.query(`
+        INSERT INTO public.noc_deleted_records (
+          id, noc_number, noc_type, client, issued_to, company_code,
+          date_of_issuance, date_of_expiration, description, documents,
+          deleted_at, deleted_by, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (id) DO UPDATE
+        SET noc_number = EXCLUDED.noc_number,
+            noc_type = EXCLUDED.noc_type,
+            client = EXCLUDED.client,
+            issued_to = EXCLUDED.issued_to,
+            company_code = EXCLUDED.company_code,
+            date_of_issuance = EXCLUDED.date_of_issuance,
+            date_of_expiration = EXCLUDED.date_of_expiration,
+            description = EXCLUDED.description,
+            documents = EXCLUDED.documents,
+            deleted_at = EXCLUDED.deleted_at,
+            deleted_by = EXCLUDED.deleted_by;
+      `, [
+        r.id, r.noc_number, r.noc_type, r.client, r.issued_to, r.company_code,
+        r.date_of_issuance, r.date_of_expiration, r.description, r.documents,
+        new Date().toISOString(), deletedBy, r.created_at
+      ]);
+    }
     const result = await pool.query('DELETE FROM public.noc_records WHERE id = ANY($1)', [ids]);
     res.json({ success: true, deleted: result.rowCount });
   } catch (err) {
@@ -436,32 +523,40 @@ app.post('/api/records/bulk-delete', async (req, res) => {
   }
 });
 
-// GET all active NOC records
+// GET all active NOC records (Fast in-memory cache + lightweight documents projection)
 app.get('/api/records', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit, 10) || 5000;
-    const search = req.query.q ? req.query.q.trim() : '';
+    const search = req.query.q ? req.query.q.trim().toLowerCase() : '';
 
-    let queryText = 'SELECT * FROM public.noc_records';
-    const params = [];
-
-    if (search) {
-      queryText += ` WHERE noc_number ILIKE $1 OR client ILIKE $1 OR issued_to ILIKE $1 OR description ILIKE $1`;
-      params.push(`%${search}%`);
+    if (!cachedLightweightRecords || (Date.now() - cacheTimestamp > CACHE_TTL_MS)) {
+      await loadLightweightRecordsFromDb();
     }
 
-    queryText += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
-    params.push(limit);
+    let records = cachedLightweightRecords || [];
+    if (search) {
+      records = records.filter(r => 
+        (r.nocNumber && r.nocNumber.toLowerCase().includes(search)) ||
+        (r.client && r.client.toLowerCase().includes(search)) ||
+        (r.issuedTo && r.issuedTo.toLowerCase().includes(search)) ||
+        (r.companyCode && r.companyCode.toLowerCase().includes(search)) ||
+        (r.nocType && r.nocType.toLowerCase().includes(search)) ||
+        (r.description && r.description.toLowerCase().includes(search))
+      );
+    }
 
-    const result = await pool.query(queryText, params);
-    const records = result.rows.map(mapDbToRecord);
+    if (limit && records.length > limit) {
+      records = records.slice(0, limit);
+    }
+
+    res.set('Cache-Control', 'public, max-age=10');
     res.json({ success: true, count: records.length, data: records });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Single NOC Record by ID
+// Single NOC Record by ID (Includes full document attachments & base64 data)
 app.get('/api/records/:id', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM public.noc_records WHERE id = $1', [req.params.id]);
@@ -501,6 +596,8 @@ app.post('/api/records', async (req, res) => {
       r.date_of_issuance, r.date_of_expiration, r.description, r.documents,
       r.created_at, r.updated_at
     ]);
+    invalidateRecordsCache();
+    loadLightweightRecordsFromDb().catch(() => {});
     res.status(201).json({ success: true, data: mapDbToRecord(result.rows[0]) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -532,6 +629,8 @@ app.put('/api/records/:id', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Record not found' });
     }
+    invalidateRecordsCache();
+    loadLightweightRecordsFromDb().catch(() => {});
     res.json({ success: true, data: mapDbToRecord(result.rows[0]) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -574,6 +673,8 @@ app.delete('/api/records/:id', async (req, res) => {
     }
 
     const result = await pool.query('DELETE FROM public.noc_records WHERE id = $1 RETURNING id', [req.params.id]);
+    invalidateRecordsCache();
+    loadLightweightRecordsFromDb().catch(() => {});
     res.json({ success: true, deletedId: req.params.id, count: result.rowCount });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -617,6 +718,8 @@ app.post('/api/records/bulk-upsert', async (req, res) => {
       upsertedCount++;
     }
 
+    invalidateRecordsCache();
+    loadLightweightRecordsFromDb().catch(() => {});
     res.json({ success: true, count: upsertedCount });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -658,6 +761,8 @@ app.post('/api/records/bulk', async (req, res) => {
       ]);
     }
     await client.query('COMMIT');
+    invalidateRecordsCache();
+    loadLightweightRecordsFromDb().catch(() => {});
     res.json({ success: true, inserted: records.length });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -669,11 +774,40 @@ app.post('/api/records/bulk', async (req, res) => {
 
 app.post('/api/records/bulk-delete', async (req, res) => {
   const ids = req.body.ids || [];
+  const deletedBy = req.body.deletedBy || 'Developer';
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ success: false, error: 'IDs array required' });
   }
   try {
+    const fetchRes = await pool.query('SELECT * FROM public.noc_records WHERE id = ANY($1)', [ids]);
+    for (const r of fetchRes.rows) {
+      await pool.query(`
+        INSERT INTO public.noc_deleted_records (
+          id, noc_number, noc_type, client, issued_to, company_code,
+          date_of_issuance, date_of_expiration, description, documents,
+          deleted_at, deleted_by, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (id) DO UPDATE
+        SET noc_number = EXCLUDED.noc_number,
+            noc_type = EXCLUDED.noc_type,
+            client = EXCLUDED.client,
+            issued_to = EXCLUDED.issued_to,
+            company_code = EXCLUDED.company_code,
+            date_of_issuance = EXCLUDED.date_of_issuance,
+            date_of_expiration = EXCLUDED.date_of_expiration,
+            description = EXCLUDED.description,
+            documents = EXCLUDED.documents,
+            deleted_at = EXCLUDED.deleted_at,
+            deleted_by = EXCLUDED.deleted_by;
+      `, [
+        r.id, r.noc_number, r.noc_type, r.client, r.issued_to, r.company_code,
+        r.date_of_issuance, r.date_of_expiration, r.description, r.documents,
+        new Date().toISOString(), deletedBy, r.created_at
+      ]);
+    }
     const result = await pool.query('DELETE FROM public.noc_records WHERE id = ANY($1)', [ids]);
+    invalidateRecordsCache();
+    loadLightweightRecordsFromDb().catch(() => {});
     res.json({ success: true, deleted: result.rowCount });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
