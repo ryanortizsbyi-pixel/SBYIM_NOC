@@ -39,13 +39,15 @@ class AuthManager {
     }
 
     try {
-      const stored = localStorage.getItem('noc_users_v1');
+      const stored = localStorage.getItem('noc_users_v3') || localStorage.getItem('noc_users_v2') || localStorage.getItem('noc_users_v1');
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const map = {};
           parsed.forEach(u => {
-            map[u.username.toLowerCase()] = u;
+            if (u && u.username) {
+              map[u.username.toLowerCase()] = u;
+            }
           });
           this._cachedUsers = map;
           return map;
@@ -56,52 +58,45 @@ class AuthManager {
     return {
       ryan: {
         username: 'ryan',
-        password: 'SBYIM@2026',
+        password: 'spider06',
         role: 'developer',
-        displayName: 'Ryan (Developer)',
-        email: 'ryan@nocportal.gov'
-      },
-      admin: {
-        username: 'admin',
-        password: 'SBYIM@2026',
-        role: 'admin',
-        displayName: 'System Administrator',
-        email: 'admin@nocportal.gov'
+        displayName: 'Ryan Ortiz (Developer)',
+        email: ''
       },
       sbyim: {
         username: 'SBYIM',
-        password: 'ManagementNOC',
+        password: 'NOC#2022#',
         role: 'admin',
-        displayName: 'SBYIM Management',
-        email: 'sbyim@nocportal.gov'
-      },
-      developer: {
-        username: 'developer',
-        password: 'dev123',
-        role: 'developer',
-        displayName: 'Lead Developer (System Engineer)',
-        email: 'developer@nocportal.gov'
+        displayName: 'SBYI Management',
+        email: ''
       },
       security: {
         username: 'security',
-        password: 'security123',
+        password: 'sec@2024',
         role: 'security',
-        displayName: 'Security Officer (Lookup & View)',
-        email: 'security@nocportal.gov'
+        displayName: 'SBYIM Security Officer',
+        email: ''
       },
-      main: {
-        username: 'main',
-        password: 'main123',
-        role: 'main',
-        displayName: 'Main Control Officer (Lookup & View)',
-        email: 'main@nocportal.gov'
+      employee01: {
+        username: 'Employee01',
+        password: '666666@',
+        role: 'employee',
+        displayName: 'Island Security',
+        email: ''
       },
-      guest: {
-        username: 'guest',
-        password: 'guest123',
+      employee02: {
+        username: 'Employee02',
+        password: '777777#',
+        role: 'employee',
+        displayName: 'Inspire Integrated',
+        email: ''
+      },
+      '1gdl': {
+        username: '1GDL',
+        password: '55555',
         role: 'guest',
-        displayName: 'Guest Officer / Viewer',
-        email: 'guest@nocportal.gov'
+        displayName: 'Gulf Dunes Landscapping',
+        email: ''
       }
     };
   }
@@ -115,49 +110,72 @@ class AuthManager {
       if (sessionSaved) {
         const parsed = JSON.parse(sessionSaved);
         if (parsed && parsed.username) {
-          if (parsed.username.toLowerCase() === 'admin') {
-            parsed.username = 'ryan';
-            if (parsed.displayName === 'System Administrator' || parsed.displayName === 'Ryan (System Administrator)') parsed.displayName = 'Ryan (Developer)';
-            parsed.role = 'developer';
+          const uKey = parsed.username.toLowerCase();
+          // If session contains old deprecated default username, purge session
+          if (['admin', 'guest', 'main'].includes(uKey)) {
+            sessionStorage.removeItem(this.STORAGE_KEY);
+            return null;
           }
-          if (parsed.username.toLowerCase() === 'security') {
+          if (uKey === 'security') {
             parsed.role = 'security';
-          } else if (parsed.username.toLowerCase() === 'sbyim') {
+            if (!parsed.displayName || parsed.displayName === 'Security Officer') parsed.displayName = 'SBYIM Security Officer';
+          } else if (uKey === 'sbyim') {
             parsed.role = 'admin';
-          } else if (parsed.username.toLowerCase() === 'ryan') {
+            if (!parsed.displayName) parsed.displayName = 'SBYI Management';
+          } else if (uKey === 'ryan') {
             parsed.role = 'developer';
-            if (parsed.displayName === 'Ryan (System Administrator)' || parsed.displayName === 'System Administrator') {
-              parsed.displayName = 'Ryan (Developer)';
+            if (parsed.displayName === 'Ryan (System Administrator)' || parsed.displayName === 'System Administrator' || parsed.displayName === 'Ryan (Developer)' || !parsed.displayName) {
+              parsed.displayName = 'Ryan Ortiz (Developer)';
             }
+          } else if (uKey === 'employee01') {
+            parsed.role = 'employee';
+            if (!parsed.displayName) parsed.displayName = 'Island Security';
+          } else if (uKey === 'employee02') {
+            parsed.role = 'employee';
+            if (!parsed.displayName) parsed.displayName = 'Inspire Integrated';
+          } else if (uKey === '1gdl') {
+            parsed.role = 'guest';
+            if (!parsed.displayName) parsed.displayName = 'Gulf Dunes Landscapping';
           }
           sessionStorage.setItem(this.STORAGE_KEY, JSON.stringify(parsed));
+          return parsed;
         }
-        return parsed;
       }
       const localSaved = localStorage.getItem(this.STORAGE_KEY);
       if (localSaved) {
         const parsed = JSON.parse(localSaved);
         if (parsed && parsed.username) {
-          if (parsed.username.toLowerCase() === 'admin') {
-            parsed.username = 'ryan';
-            if (parsed.displayName === 'System Administrator' || parsed.displayName === 'Ryan (System Administrator)') parsed.displayName = 'Ryan (Developer)';
-            parsed.role = 'developer';
+          const uKey = parsed.username.toLowerCase();
+          if (['admin', 'guest', 'main'].includes(uKey)) {
+            localStorage.removeItem(this.STORAGE_KEY);
+            return null;
           }
-          if (parsed.username.toLowerCase() === 'security') {
+          if (uKey === 'security') {
             parsed.role = 'security';
-          } else if (parsed.username.toLowerCase() === 'sbyim') {
+            if (!parsed.displayName || parsed.displayName === 'Security Officer') parsed.displayName = 'SBYIM Security Officer';
+          } else if (uKey === 'sbyim') {
             parsed.role = 'admin';
-          } else if (parsed.username.toLowerCase() === 'ryan') {
+            if (!parsed.displayName) parsed.displayName = 'SBYI Management';
+          } else if (uKey === 'ryan') {
             parsed.role = 'developer';
-            if (parsed.displayName === 'Ryan (System Administrator)' || parsed.displayName === 'System Administrator') {
-              parsed.displayName = 'Ryan (Developer)';
+            if (parsed.displayName === 'Ryan (System Administrator)' || parsed.displayName === 'System Administrator' || parsed.displayName === 'Ryan (Developer)' || !parsed.displayName) {
+              parsed.displayName = 'Ryan Ortiz (Developer)';
             }
+          } else if (uKey === 'employee01') {
+            parsed.role = 'employee';
+            if (!parsed.displayName) parsed.displayName = 'Island Security';
+          } else if (uKey === 'employee02') {
+            parsed.role = 'employee';
+            if (!parsed.displayName) parsed.displayName = 'Inspire Integrated';
+          } else if (uKey === '1gdl') {
+            parsed.role = 'guest';
+            if (!parsed.displayName) parsed.displayName = 'Gulf Dunes Landscapping';
           }
           localStorage.setItem(this.STORAGE_KEY, JSON.stringify(parsed));
-        }
-        if (parsed && parsed.rememberMe) {
-          sessionStorage.setItem(this.STORAGE_KEY, JSON.stringify(parsed));
-          return parsed;
+          if (parsed && parsed.rememberMe) {
+            sessionStorage.setItem(this.STORAGE_KEY, JSON.stringify(parsed));
+            return parsed;
+          }
         }
       }
     } catch (e) {
@@ -178,15 +196,32 @@ class AuthManager {
     if (user && user.password === password) {
       let resolvedRole = user.role || 'guest';
       let resolvedDisplayName = user.displayName || user.display_name || user.username;
-      if (userKey === 'sbyim') resolvedRole = 'admin';
-      if (userKey === 'security') resolvedRole = 'security';
+      if (userKey === 'sbyim') {
+        resolvedRole = 'admin';
+        if (!resolvedDisplayName || resolvedDisplayName === 'admin') resolvedDisplayName = 'SBYI Management';
+      }
+      if (userKey === 'security') {
+        resolvedRole = 'security';
+        if (!resolvedDisplayName || resolvedDisplayName === 'Security Officer') resolvedDisplayName = 'SBYIM Security Officer';
+      }
       if (userKey === 'ryan') {
         resolvedRole = 'developer';
-        if (resolvedDisplayName === 'Ryan (System Administrator)' || resolvedDisplayName === 'System Administrator') {
-          resolvedDisplayName = 'Ryan (Developer)';
+        if (resolvedDisplayName === 'Ryan (System Administrator)' || resolvedDisplayName === 'System Administrator' || resolvedDisplayName === 'Ryan (Developer)' || !resolvedDisplayName) {
+          resolvedDisplayName = 'Ryan Ortiz (Developer)';
         }
       }
-      if (userKey === 'admin') resolvedRole = 'admin';
+      if (userKey === 'employee01') {
+        resolvedRole = 'employee';
+        if (!resolvedDisplayName) resolvedDisplayName = 'Island Security';
+      }
+      if (userKey === 'employee02') {
+        resolvedRole = 'employee';
+        if (!resolvedDisplayName) resolvedDisplayName = 'Inspire Integrated';
+      }
+      if (userKey === '1gdl') {
+        resolvedRole = 'guest';
+        if (!resolvedDisplayName) resolvedDisplayName = 'Gulf Dunes Landscapping';
+      }
 
       this.currentUser = {
         username: user.username,
@@ -218,7 +253,12 @@ class AuthManager {
    * Quick role switcher / direct login
    */
   switchRole(role) {
-    const u = this.systemUsers[role.toLowerCase()];
+    const roleKey = String(role || '').trim().toLowerCase();
+    const usersMap = this.systemUsers;
+    let u = usersMap[roleKey];
+    if (!u) {
+      u = Object.values(usersMap).find(user => (user.role || '').toLowerCase() === roleKey);
+    }
     if (u) {
       return this.login(u.username, u.password);
     }
@@ -295,7 +335,7 @@ class AuthManager {
       (this.currentUser.role === 'admin' ||
        this.currentUser.role === 'developer' ||
        this.currentUser.username?.toLowerCase() === 'ryan' ||
-       this.currentUser.username?.toLowerCase() === 'admin')
+       this.currentUser.username?.toLowerCase() === 'sbyim')
     );
   }
 
@@ -317,7 +357,6 @@ class AuthManager {
       this.currentUser &&
       (this.currentUser.role === 'admin' ||
        this.currentUser.username?.toLowerCase() === 'ryan' ||
-       this.currentUser.username?.toLowerCase() === 'admin' ||
        this.currentUser.role === 'developer')
     );
   }
@@ -328,7 +367,6 @@ class AuthManager {
       this.currentUser &&
       (this.currentUser.role === 'admin' ||
        this.currentUser.username?.toLowerCase() === 'ryan' ||
-       this.currentUser.username?.toLowerCase() === 'admin' ||
        this.currentUser.role === 'developer')
     );
   }

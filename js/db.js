@@ -4,8 +4,9 @@
  */
 
 const LOCAL_DB_NAME = 'NOC_Portal_DB';
-const LOCAL_DB_VERSION = 1;
+const LOCAL_DB_VERSION = 2;
 const LOCAL_STORE_NAME = 'noc_records';
+const LOCAL_DELETED_STORE_NAME = 'noc_deleted_records';
 
 class NOCDatabase {
   constructor() {
@@ -37,6 +38,11 @@ class NOCDatabase {
           store.createIndex('dateOfExpiration', 'dateOfExpiration', { unique: false });
           store.createIndex('createdAt', 'createdAt', { unique: false });
         }
+        if (!db.objectStoreNames.contains(LOCAL_DELETED_STORE_NAME)) {
+          const delStore = db.createObjectStore(LOCAL_DELETED_STORE_NAME, { keyPath: 'id' });
+          delStore.createIndex('nocNumber', 'nocNumber', { unique: false });
+          delStore.createIndex('deletedAt', 'deletedAt', { unique: false });
+        }
       };
 
       request.onsuccess = (event) => {
@@ -52,17 +58,312 @@ class NOCDatabase {
   }
 
   /**
+   * Helper to build fully qualified API URL based on active backend host
+   */
+  getApiUrl(endpoint) {
+    const base = this.apiBaseUrl !== undefined ? this.apiBaseUrl : '';
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+    return `${base}${cleanEndpoint}`;
+  }
+
+  /**
+   * Check connection to backend Aiven PostgreSQL API
+   */
+  async checkAivenStatus(forceTest = false) {
+    const candidates = [];
+    if (this.customApiUrl) {
+      candidates.push(this.customApiUrl);
+    }
+    // If opened directly from http://localhost:3000 or same origin
+    if (window.location && window.location.origin && window.location.origin.startsWith('http')) {
+      candidates.push('');
+    }
+    // Also check standard port 3000 if opened from VS Code Live Server (port 5500) or file://
+    if (!candidates.includes('http://localhost:3000')) {
+      candidates.push('http://localhost:3000');
+    }
+    if (!candidates.includes('http://127.0.0.1:3000')) {
+      candidates.push('http://127.0.0.1:3000');
+    }
+
+    for (const base of candidates) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        const res = await fetch(`${base}/api/stats`, { 
+          cache: 'no-store',
+          signal: controller.signal 
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            this.apiBaseUrl = base;
+            this.isAivenConnected = true;
+            this.aivenHost = data.host || 'pg2026-noc-ryansbyi-noc.f.aivencloud.com';
+            this.aivenCounts = data.counts || {};
+            this.aivenDatabase = data.database || 'defaultdb';
+            this.aivenPort = data.port || 13029;
+            console.log(`NOCDatabase: Connected to Aiven PostgreSQL cloud database (${data.host}) via ${base || 'current origin'}.`);
+            window.dispatchEvent(new CustomEvent('noc:aiven-status-change', {
+              detail: { isConnected: true, host: data.host, counts: data.counts, baseUrl: base }
+            }));
+            return true;
+          }
+        }
+      } catch (e) {
+        // Continue to try next candidate
+      }
+    }
+
+    this.isAivenConnected = false;
+    return false;
+  }
+
+  /**
+   * Test latency, connectivity, and database version with Aiven Cloud
+   */
+  async testAivenConnection() {
+    const start = Date.now();
+    try {
+      // First ensure status check
+      await this.checkAivenStatus(true);
+      const url = this.getApiUrl('/api/db-test');
+      const res = await fetch(url, { cache: 'no-store' });
+      const latencyMs = Date.now() - start;
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success) {
+          return {
+            success: true,
+            latencyMs,
+            host: this.aivenHost || 'pg2026-noc-ryansbyi-noc.f.aivencloud.com',
+            database: this.aivenDatabase || 'defaultdb',
+            version: body.version || 'PostgreSQL 16 (Aiven Cloud)',
+            counts: this.aivenCounts || {}
+          };
+        }
+      }
+      return { success: false, message: 'Server returned an error status.' };
+    } catch (err) {
+      return { success: false, message: 'Could not connect to backend server at http://localhost:3000.' };
+    }
+  }
+
+  /**
+   * 1-Click Sync all local data (including all PDF attachments) to Aiven Cloud PostgreSQL
+   */
+  async syncLocalToAiven(onProgress = null) {
+    if (!this.isAivenActive()) {
+      await this.checkAivenStatus(true);
+      if (!this.isAivenActive()) {
+        throw new Error('Aiven backend server is not connected at http://localhost:3000.');
+      }
+    }
+
+    const localRecords = await this._localGetAll();
+    const localReqDocs = await this.getRequirementsDocs();
+    const localCocDocs = await this.getCocDocs();
+    const localAiDocs = await this.getAiDocs();
+    const localTypes = await this.getCustomTypes();
+    const localContractors = await this.getCustomContractors();
+    const localUsers = await this.getUsers();
+    const localRenames = await this.getContractorRenames();
+
+    const stats = {
+      recordsSynced: 0,
+      reqDocsSynced: 0,
+      cocDocsSynced: 0,
+      aiDocsSynced: 0,
+      typesSynced: 0,
+      contractorsSynced: 0,
+      usersSynced: 0,
+      settingsSynced: 0
+    };
+
+    // 1. Sync NOC Records with all attached PDF documents in batches
+    if (localRecords && localRecords.length > 0) {
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < localRecords.length; i += BATCH_SIZE) {
+        const batch = localRecords.slice(i, i + BATCH_SIZE);
+        try {
+          const res = await fetch(this.getApiUrl('/api/records/bulk-upsert'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ records: batch })
+          });
+          if (res.ok) {
+            stats.recordsSynced += batch.length;
+          } else {
+            // Fallback row by row
+            for (const singleRec of batch) {
+              await fetch(this.getApiUrl('/api/records'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(singleRec)
+              });
+              stats.recordsSynced++;
+            }
+          }
+        } catch (batchErr) {
+          console.warn('Batch sync note, falling back to row-by-row:', batchErr.message);
+          for (const singleRec of batch) {
+            try {
+              await fetch(this.getApiUrl('/api/records'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(singleRec)
+              });
+              stats.recordsSynced++;
+            } catch (singleErr) {
+              console.warn('Single record sync note:', singleErr.message);
+            }
+          }
+        }
+
+        if (typeof onProgress === 'function') {
+          onProgress({ stage: 'records', current: stats.recordsSynced, total: localRecords.length });
+        }
+      }
+    }
+
+    // 2. Sync Requirements Documents (PDFs / Docs)
+    if (localReqDocs && localReqDocs.length > 0) {
+      for (const doc of localReqDocs) {
+        try {
+          await fetch(this.getApiUrl('/api/requirements-docs'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(doc)
+          });
+          stats.reqDocsSynced++;
+        } catch (e) {
+          console.warn('Sync req doc note:', e.message);
+        }
+      }
+    }
+
+    // 3. Sync SBYI COC Documents (PDFs)
+    if (localCocDocs && localCocDocs.length > 0) {
+      for (const doc of localCocDocs) {
+        try {
+          await fetch(this.getApiUrl('/api/coc-docs'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(doc)
+          });
+          stats.cocDocsSynced++;
+        } catch (e) {
+          console.warn('Sync coc doc note:', e.message);
+        }
+      }
+    }
+
+    // 4. Sync AI Documents (DOC / PDF)
+    if (localAiDocs && localAiDocs.length > 0) {
+      for (const doc of localAiDocs) {
+        try {
+          await fetch(this.getApiUrl('/api/ai-docs'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(doc)
+          });
+          stats.aiDocsSynced++;
+        } catch (e) {
+          console.warn('Sync ai doc note:', e.message);
+        }
+      }
+    }
+
+    // 5. Sync Custom Types
+    if (localTypes && localTypes.length > 0) {
+      for (const type of localTypes) {
+        try {
+          await fetch(this.getApiUrl('/api/custom-types'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: type })
+          });
+          stats.typesSynced++;
+        } catch (e) {}
+      }
+    }
+
+    // 6. Sync Custom Contractors
+    if (localContractors && localContractors.length > 0) {
+      for (const c of localContractors) {
+        try {
+          await fetch(this.getApiUrl('/api/custom-contractors'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: c })
+          });
+          stats.contractorsSynced++;
+        } catch (e) {}
+      }
+    }
+
+    // 7. Sync Users
+    if (localUsers && localUsers.length > 0) {
+      for (const u of localUsers) {
+        try {
+          await fetch(this.getApiUrl('/api/users'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(u)
+          });
+          stats.usersSynced++;
+        } catch (e) {}
+      }
+    }
+
+    // 8. Sync Settings
+    try {
+      await fetch(this.getApiUrl('/api/settings'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'noc_contractor_renames', value: localRenames })
+      });
+      stats.settingsSynced++;
+    } catch (e) {}
+
+    await this.checkAivenStatus(true);
+    return {
+      success: true,
+      stats,
+      message: `Successfully migrated ${stats.recordsSynced} NOC records with all PDF attachments, ${stats.reqDocsSynced} guidelines, ${stats.cocDocsSynced} COC certs, ${stats.aiDocsSynced} AI docs, ${stats.typesSynced} types, ${stats.contractorsSynced} contractors & ${stats.usersSynced} users to Aiven PostgreSQL Cloud!`
+    };
+  }
+
+  /**
+   * Check if active database is Aiven Cloud PostgreSQL
+   */
+  isAivenActive() {
+    return Boolean(this.isAivenConnected);
+  }
+
+  /**
    * Main database initialization
    */
   async init() {
     await this.initLocalDB();
+    await this.purgeLegacyDemoData();
 
-    // Check if Supabase client is configured and test connection
+    // 1. Check Aiven PostgreSQL backend
+    const aivenOk = await this.checkAivenStatus();
+    if (aivenOk) {
+      console.log('NOCDatabase: Aiven Cloud Backend active.');
+      return;
+    }
+
+    // 2. Fallback: Check if Supabase client is configured and test connection
     if (window.supabaseManager && window.supabaseManager.isConfigured()) {
       try {
         const status = await window.supabaseManager.testConnection();
         if (status.success) {
           console.log('NOCDatabase: Connected to Supabase PostgreSQL database.');
+          this.purgeLegacyDemoData().catch(() => {});
         } else {
           console.warn('NOCDatabase: Supabase credentials found but connection test failed. Using local storage.', status.message);
         }
@@ -70,7 +371,28 @@ class NOCDatabase {
         console.warn('NOCDatabase: Supabase test connection error:', e);
       }
     } else {
-      console.log('NOCDatabase: Supabase not configured yet. Operating in Local Persistent mode.');
+      console.log('NOCDatabase: Operating in Local Persistent mode.');
+    }
+  }
+
+  /**
+   * Cleans legacy demo account usernames from localStorage and Supabase if needed
+   */
+  async purgeLegacyDemoData() {
+    const legacyUsernames = ['admin', 'developer', 'main', 'guest'];
+
+    try {
+      localStorage.removeItem('noc_users_v1');
+      localStorage.removeItem('noc_users_v2');
+    } catch (e) {}
+
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        await client.from('noc_users').delete().in('username', legacyUsernames);
+      } catch (e) {
+        console.warn('Supabase demo accounts purge note:', e);
+      }
     }
   }
 
@@ -273,6 +595,23 @@ class NOCDatabase {
    * Retrieve all NOC records.
    */
   async getAll() {
+    // 1. Aiven Cloud Backend
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/records?limit=5000'), { cache: 'no-store' });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && Array.isArray(body.data) && body.data.length > 0) {
+            this._localBulkInsert(body.data).catch(() => {});
+            return body.data;
+          }
+        }
+      } catch (err) {
+        console.warn('Aiven getAll failed, falling back to local/Supabase:', err.message);
+      }
+    }
+
+    // 2. Supabase Cloud Fallback
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -292,7 +631,7 @@ class NOCDatabase {
           return records;
         }
 
-        // If Supabase is connected but empty, check if local storage/IndexedDB has records (e.g. 431 records)
+        // If Supabase is connected but empty, check if local storage/IndexedDB has records (e.g. 426 records)
         const localRecords = await this._localGetAll();
         if (localRecords && localRecords.length > 0) {
           console.log(`Supabase database table is empty. Auto-syncing ${localRecords.length} local records to Supabase...`);
@@ -306,7 +645,7 @@ class NOCDatabase {
       }
     }
 
-    // Local IndexedDB Fallback
+    // 3. Local IndexedDB Fallback
     return this._localGetAll();
   }
 
@@ -314,6 +653,18 @@ class NOCDatabase {
    * Retrieve a single NOC record by ID.
    */
   async getById(id) {
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/records/' + encodeURIComponent(id)));
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && body.data) return body.data;
+        }
+      } catch (err) {
+        console.warn('Aiven getById failed, checking local:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -339,6 +690,21 @@ class NOCDatabase {
   async getByNocNumber(nocNumber) {
     if (!nocNumber) return null;
     const cleanNum = nocNumber.trim();
+
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/records?q=' + encodeURIComponent(cleanNum)));
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && Array.isArray(body.data)) {
+            const found = body.data.find(r => (r.nocNumber || '').toLowerCase() === cleanNum.toLowerCase());
+            if (found) return found;
+          }
+        }
+      } catch (err) {
+        console.warn('Aiven getByNocNumber failed:', err.message);
+      }
+    }
 
     if (this.isSupabaseActive()) {
       try {
@@ -376,6 +742,25 @@ class NOCDatabase {
       updatedAt: new Date().toISOString(),
       documents: record.documents || []
     };
+
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/records'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newRecord)
+        });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && body.data) {
+            await this._localPut(body.data).catch(() => {});
+            return body.data;
+          }
+        }
+      } catch (err) {
+        console.warn('Aiven add failed, storing in local DB:', err.message);
+      }
+    }
 
     if (this.isSupabaseActive()) {
       try {
@@ -427,6 +812,25 @@ class NOCDatabase {
       updatedAt: new Date().toISOString()
     };
 
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/records/' + encodeURIComponent(id)), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(mergedRecord)
+        });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && body.data) {
+            await this._localPut(body.data).catch(() => {});
+            return body.data;
+          }
+        }
+      } catch (err) {
+        console.warn('Aiven update failed:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -455,9 +859,46 @@ class NOCDatabase {
   }
 
   /**
-   * Delete an NOC record.
+   * Delete an NOC record (archives to Recycle Bin before removing).
    */
   async delete(id) {
+    let targetRecord = null;
+    try {
+      targetRecord = await this.getById(id) || await this._localGetById(id);
+    } catch (e) {}
+
+    // 1. Archive to Recycle Bin / Deleted store
+    if (targetRecord) {
+      const deletedRecord = {
+        ...targetRecord,
+        deletedAt: new Date().toISOString(),
+        deletedBy: (window.nocAuth && window.nocAuth.currentUser && (window.nocAuth.currentUser.displayName || window.nocAuth.currentUser.username)) || 'System Administrator'
+      };
+      await this._localSaveDeleted(deletedRecord).catch(() => {});
+
+      if (this.isAivenActive()) {
+        try {
+          await fetch(this.getApiUrl('/api/records/deleted'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(deletedRecord)
+          });
+        } catch (e) {}
+      }
+    }
+
+    // 2. Delete from Aiven Cloud if active
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl('/api/records/' + encodeURIComponent(id)), { method: 'DELETE' });
+        await this._localDelete(id).catch(() => {});
+        return true;
+      } catch (err) {
+        console.warn('Aiven delete failed:', err.message);
+      }
+    }
+
+    // 3. Delete from Supabase if active
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -481,26 +922,168 @@ class NOCDatabase {
   }
 
   /**
+   * Retrieve all deleted records from Recycle Bin.
+   */
+  async getDeletedRecords() {
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/records/deleted'), { cache: 'no-store' });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && Array.isArray(body.data)) {
+            for (const d of body.data) {
+              await this._localSaveDeleted(d).catch(() => {});
+            }
+            return body.data;
+          }
+        }
+      } catch (e) {}
+    }
+    return this._localGetDeleted();
+  }
+
+  /**
+   * Restore a single deleted record back into active records.
+   */
+  async restoreDeletedRecord(id) {
+    const deletedList = await this._localGetDeleted();
+    const record = deletedList.find(r => r.id === id);
+    if (!record) {
+      if (this.isAivenActive()) {
+        try {
+          const res = await fetch(this.getApiUrl(`/api/records/${encodeURIComponent(id)}/restore`), { method: 'POST' });
+          if (res.ok) {
+            const body = await res.json();
+            if (body.success && body.data) {
+              await this._localPut(body.data);
+              await this._localRemoveDeleted(id);
+              return body.data;
+            }
+          }
+        } catch (e) {}
+      }
+      throw new Error('Deleted record not found in Recycle Bin.');
+    }
+
+    const restoredRecord = { ...record };
+    delete restoredRecord.deletedAt;
+    delete restoredRecord.deletedBy;
+    restoredRecord.updatedAt = new Date().toISOString();
+
+    // 1. Add back to active database
+    await this.put(restoredRecord);
+
+    // 2. Remove from deleted records store
+    await this._localRemoveDeleted(id);
+
+    // 3. Sync to Aiven if active
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl(`/api/records/${encodeURIComponent(id)}/restore`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(restoredRecord)
+        });
+      } catch (e) {}
+    }
+
+    return restoredRecord;
+  }
+
+  /**
+   * Restore all deleted records in the Recycle Bin.
+   */
+  async restoreAllDeletedRecords() {
+    const deletedList = await this.getDeletedRecords();
+    if (!deletedList || deletedList.length === 0) return 0;
+
+    let restoredCount = 0;
+    for (const d of deletedList) {
+      try {
+        await this.restoreDeletedRecord(d.id);
+        restoredCount++;
+      } catch (e) {
+        console.warn('Error restoring deleted record:', d.id, e.message);
+      }
+    }
+    return restoredCount;
+  }
+
+  /**
+   * Permanently purge a record from Recycle Bin.
+   */
+  async permanentlyDeleteRecord(id) {
+    await this._localRemoveDeleted(id);
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl(`/api/records/deleted/${encodeURIComponent(id)}`), { method: 'DELETE' });
+      } catch (e) {}
+    }
+    return true;
+  }
+
+  /**
+   * Clear all deleted records from Recycle Bin.
+   */
+  async clearDeletedRecords() {
+    await this._localClearDeleted();
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl('/api/records/deleted'), { method: 'DELETE' });
+      } catch (e) {}
+    }
+    return true;
+  }
+
+  /**
+   * Get count of deleted records currently in Recycle Bin.
+   */
+  async getDeletedCount() {
+    const records = await this._localGetDeleted();
+    return records ? records.length : 0;
+  }
+
+  /**
    * Bulk insert/upsert records.
    */
   async bulkInsert(records) {
     if (!records || records.length === 0) return true;
 
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/records/bulk'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ records })
+        });
+        if (res.ok) {
+          await this._localBulkInsert(records).catch(() => {});
+          return records.length;
+        }
+      } catch (err) {
+        console.warn('Aiven bulkInsert failed:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
         const dbRows = records.map(r => this.mapRecordToDb(r));
-        const BATCH_SIZE = 25;
+        const BATCH_SIZE = 5;
         for (let i = 0; i < dbRows.length; i += BATCH_SIZE) {
           const batch = dbRows.slice(i, i + BATCH_SIZE);
-          const { error } = await client
-            .from('noc_records')
-            .upsert(batch, { onConflict: 'id' });
-          if (error) {
-            console.error(`Supabase bulkInsert batch error (${i}-${i + batch.length}):`, error);
-            throw error;
+          try {
+            const { error } = await client
+              .from('noc_records')
+              .upsert(batch, { onConflict: 'noc_number' });
+
+            if (error) throw error;
+          } catch (batchErr) {
+            console.warn(`Supabase bulkInsert batch error (${i}-${i + batch.length}):`, batchErr.message);
           }
         }
+        await this._localBulkInsert(records).catch(() => {});
+        return records.length;
       } catch (err) {
         console.warn('Supabase bulkInsert failed, writing locally:', err.message);
       }
@@ -514,6 +1097,18 @@ class NOCDatabase {
    * Clear all records in the database.
    */
   async clearAll() {
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl('/api/records/bulk-delete'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: (await this._localGetAll()).map(r => r.id) })
+        });
+      } catch (err) {
+        console.warn('Aiven clearAll note:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -539,6 +1134,23 @@ class NOCDatabase {
    * Get all stored NOC Requirements Documents
    */
   async getRequirementsDocs() {
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/requirements-docs'), { cache: 'no-store' });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && Array.isArray(body.data) && body.data.length > 0) {
+            try {
+              localStorage.setItem('noc_requirements_documents_v2', JSON.stringify(body.data));
+            } catch (e) {}
+            return body.data;
+          }
+        }
+      } catch (err) {
+        console.warn('Aiven getRequirementsDocs failed, checking local:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -574,6 +1186,20 @@ class NOCDatabase {
    */
   async saveRequirementsDocs(docs) {
     const clamped = (docs || []).slice(0, 5);
+
+    if (this.isAivenActive()) {
+      try {
+        for (const doc of clamped) {
+          await fetch(this.getApiUrl('/api/requirements-docs'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(doc)
+          });
+        }
+      } catch (err) {
+        console.warn('Aiven saveRequirementsDocs note:', err.message);
+      }
+    }
 
     if (this.isSupabaseActive()) {
       try {
@@ -611,6 +1237,14 @@ class NOCDatabase {
    * Delete a single requirements document by ID
    */
   async deleteRequirementsDoc(id) {
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl('/api/requirements-docs/' + encodeURIComponent(id)), { method: 'DELETE' });
+      } catch (err) {
+        console.warn('Aiven deleteRequirementsDoc note:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -633,6 +1267,23 @@ class NOCDatabase {
    * Get all stored SBYI COC Documents (PDF only, max 8)
    */
   async getCocDocs() {
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/coc-docs'), { cache: 'no-store' });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && Array.isArray(body.data) && body.data.length > 0) {
+            try {
+              localStorage.setItem('sbyi_coc_documents_v1', JSON.stringify(body.data));
+            } catch (e) {}
+            return body.data;
+          }
+        }
+      } catch (err) {
+        console.warn('Aiven getCocDocs failed, checking local:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -671,6 +1322,20 @@ class NOCDatabase {
       .filter(d => d.type === 'application/pdf' || (d.name && d.name.toLowerCase().endsWith('.pdf')))
       .slice(0, 8);
 
+    if (this.isAivenActive()) {
+      try {
+        for (const doc of clamped) {
+          await fetch(this.getApiUrl('/api/coc-docs'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(doc)
+          });
+        }
+      } catch (err) {
+        console.warn('Aiven saveCocDocs note:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -707,6 +1372,14 @@ class NOCDatabase {
    * Delete a single SBYI COC document by ID
    */
   async deleteCocDoc(id) {
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl('/api/coc-docs/' + encodeURIComponent(id)), { method: 'DELETE' });
+      } catch (err) {
+        console.warn('Aiven deleteCocDoc note:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -729,6 +1402,24 @@ class NOCDatabase {
    * Get all stored AI Knowledge Base Documents (DOC, DOCX, or PDF)
    */
   async getAiDocs() {
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/ai-docs'), { cache: 'no-store' });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && Array.isArray(body.data) && body.data.length > 0) {
+            try {
+              localStorage.setItem('ai_documents_v2', JSON.stringify(body.data));
+              localStorage.removeItem('ai_documents_v1');
+            } catch (e) {}
+            return body.data;
+          }
+        }
+      } catch (err) {
+        console.warn('Aiven getAiDocs failed, checking local:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -739,23 +1430,37 @@ class NOCDatabase {
 
         if (error) throw error;
         if (data && data.length > 0) {
-          return data.map(row => this.mapDbToAiDoc(row));
+          const docs = data.map(row => this.mapDbToAiDoc(row));
+          try {
+            localStorage.setItem('ai_documents_v2', JSON.stringify(docs));
+            localStorage.removeItem('ai_documents_v1');
+          } catch (e) {}
+          return docs;
         }
       } catch (err) {
         console.warn('Supabase getAiDocs failed, reading local:', err.message);
       }
     }
 
-    // Fallback to localStorage
+    // Fallback to localStorage or default seed
     try {
-      const stored = localStorage.getItem('ai_documents_v1');
+      const stored = localStorage.getItem('ai_documents_v2') || localStorage.getItem('ai_documents_v1');
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
       }
     } catch (e) {
       console.warn('Could not read AI docs from localStorage', e);
     }
-    return [];
+    
+    const defaults = window.DEFAULT_AI_DOCS || [];
+    try {
+      localStorage.setItem('ai_documents_v2', JSON.stringify(defaults));
+      localStorage.removeItem('ai_documents_v1');
+    } catch (e) {}
+    return defaults;
   }
 
   /**
@@ -768,6 +1473,20 @@ class NOCDatabase {
       return name.endsWith('.pdf') || name.endsWith('.docx') || name.endsWith('.doc') ||
              type.includes('pdf') || type.includes('wordprocessingml') || type.includes('msword');
     });
+
+    if (this.isAivenActive()) {
+      try {
+        for (const doc of validDocs) {
+          await fetch(this.getApiUrl('/api/ai-docs'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(doc)
+          });
+        }
+      } catch (err) {
+        console.warn('Aiven saveAiDocs note:', err.message);
+      }
+    }
 
     if (this.isSupabaseActive()) {
       try {
@@ -786,7 +1505,8 @@ class NOCDatabase {
     }
 
     try {
-      localStorage.setItem('ai_documents_v1', JSON.stringify(validDocs));
+      localStorage.setItem('ai_documents_v2', JSON.stringify(validDocs));
+      localStorage.removeItem('ai_documents_v1');
     } catch (e) {
       console.warn('Could not write AI docs to localStorage', e);
     }
@@ -805,6 +1525,14 @@ class NOCDatabase {
    * Delete a single AI document by ID
    */
   async deleteAiDoc(id) {
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl('/api/ai-docs/' + encodeURIComponent(id)), { method: 'DELETE' });
+      } catch (err) {
+        console.warn('Aiven deleteAiDoc note:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -820,13 +1548,30 @@ class NOCDatabase {
   }
 
   // ==========================================================================
-  // CUSTOM NOC TYPES (Supabase & Local)
+  // CUSTOM NOC TYPES (Aiven, Supabase & Local)
   // ==========================================================================
 
   /**
    * Get all custom NOC types
    */
   async getCustomTypes() {
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/custom-types'), { cache: 'no-store' });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && Array.isArray(body.data) && body.data.length > 0) {
+            try {
+              localStorage.setItem('noc_custom_types', JSON.stringify(body.data));
+            } catch (e) {}
+            return body.data;
+          }
+        }
+      } catch (err) {
+        console.warn('Aiven getCustomTypes failed:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -853,7 +1598,7 @@ class NOCDatabase {
     } catch (e) {
       console.warn('Could not read custom types from localStorage', e);
     }
-    return [];
+    return window.DEFAULT_CUSTOM_TYPES || [];
   }
 
   /**
@@ -864,6 +1609,18 @@ class NOCDatabase {
     const trimmed = String(typeName).trim();
     if (!trimmed) return;
 
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl('/api/custom-types'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: trimmed })
+        });
+      } catch (err) {
+        console.warn('Aiven custom type insert note:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -872,7 +1629,6 @@ class NOCDatabase {
           .insert({ name: trimmed })
           .select();
       } catch (err) {
-        // Ignore duplicate error in Supabase
         console.log('Supabase custom type insert note:', err.message);
       }
     }
@@ -893,6 +1649,23 @@ class NOCDatabase {
    * Get all custom Contractors / Companies
    */
   async getCustomContractors() {
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/custom-contractors'), { cache: 'no-store' });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && Array.isArray(body.data) && body.data.length > 0) {
+            try {
+              localStorage.setItem('noc_custom_contractors', JSON.stringify(body.data));
+            } catch (e) {}
+            return body.data;
+          }
+        }
+      } catch (err) {
+        console.warn('Aiven getCustomContractors failed:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -930,6 +1703,18 @@ class NOCDatabase {
     const trimmed = String(contractorName).trim().toUpperCase();
     if (!trimmed) return;
 
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl('/api/custom-contractors'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: trimmed })
+        });
+      } catch (err) {
+        console.warn('Aiven custom contractor insert note:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -938,7 +1723,6 @@ class NOCDatabase {
           .insert({ name: trimmed })
           .select();
       } catch (err) {
-        // Ignore duplicate error in Supabase
         console.log('Supabase custom contractor insert note:', err.message);
       }
     }
@@ -964,16 +1748,27 @@ class NOCDatabase {
     const newTrimmed = String(newName).trim().toUpperCase();
     if (!oldTrimmed || !newTrimmed || oldTrimmed === newTrimmed) return;
 
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl('/api/custom-contractors/' + encodeURIComponent(oldTrimmed)), { method: 'DELETE' });
+        await fetch(this.getApiUrl('/api/custom-contractors'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newTrimmed })
+        });
+      } catch (err) {
+        console.warn('Aiven contractor rename note:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
-        // Update in custom contractors table if exists
         await client
           .from('noc_custom_contractors')
           .update({ name: newTrimmed })
           .eq('name', oldTrimmed);
 
-        // Also update any noc_records that reference the old contractor
         await client
           .from('noc_records')
           .update({ issued_to: newTrimmed })
@@ -990,7 +1785,6 @@ class NOCDatabase {
       renames[oldTrimmed] = newTrimmed;
       localStorage.setItem('noc_contractor_renames', JSON.stringify(renames));
 
-      // Update custom contractors array
       let customContractors = await this.getCustomContractors();
       const idx = customContractors.findIndex(c => c.toUpperCase() === oldTrimmed);
       if (idx !== -1) {
@@ -999,47 +1793,25 @@ class NOCDatabase {
         customContractors.push(newTrimmed);
       }
       localStorage.setItem('noc_custom_contractors', JSON.stringify(customContractors));
-
-      // Update local storage records
-      const rawRecords = localStorage.getItem('noc_records_v1');
-      if (rawRecords) {
-        let records = JSON.parse(rawRecords);
-        if (Array.isArray(records)) {
-          let modified = false;
-          records.forEach(r => {
-            if (r.issuedTo && r.issuedTo.trim().toUpperCase() === oldTrimmed) {
-              r.issuedTo = newTrimmed;
-              modified = true;
-            }
-          });
-          if (modified) {
-            localStorage.setItem('noc_records_v1', JSON.stringify(records));
-          }
-        }
-      }
-
-      // Also sync renames to Supabase noc_settings table
-      if (this.isSupabaseActive()) {
-        try {
-          const client = this.getSupabaseClient();
-          await client.from('noc_settings').upsert({
-            key: 'noc_contractor_renames',
-            value: renames,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'key' });
-        } catch (e) {
-          console.warn('Supabase contractor renames sync note:', e);
-        }
-      }
     } catch (e) {
       console.warn('Could not update contractor in localStorage', e);
     }
   }
 
   /**
-   * Retrieve all saved contractor rename mappings (from Supabase or localStorage)
+   * Retrieve all saved contractor rename mappings (from Aiven, Supabase or localStorage)
    */
   async getContractorRenames() {
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/settings/noc_contractor_renames'), { cache: 'no-store' });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && body.data) return body.data;
+        }
+      } catch (err) {}
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -1055,8 +1827,8 @@ class NOCDatabase {
           } catch (e) {}
           return data.value;
         }
-      } catch (e) {
-        console.warn('Supabase getContractorRenames failed, reading local:', e.message);
+      } catch (err) {
+        console.warn('Supabase getContractorRenames failed, reading local:', err.message);
       }
     }
 
@@ -1070,10 +1842,20 @@ class NOCDatabase {
   }
 
   /**
-   * Generic setting getter (Supabase + localStorage fallback)
+   * Generic setting getter (Aiven + Supabase + localStorage fallback)
    */
   async getSetting(key, defaultValue = null) {
     if (!key) return defaultValue;
+
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/settings/' + encodeURIComponent(key)), { cache: 'no-store' });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && body.data !== null && body.data !== undefined) return body.data;
+        }
+      } catch (err) {}
+    }
 
     if (this.isSupabaseActive()) {
       try {
@@ -1102,10 +1884,20 @@ class NOCDatabase {
   }
 
   /**
-   * Generic setting setter (Supabase + localStorage)
+   * Generic setting setter (Aiven + Supabase + localStorage)
    */
   async saveSetting(key, value) {
     if (!key) return;
+
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl('/api/settings'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, value })
+        });
+      } catch (err) {}
+    }
 
     if (this.isSupabaseActive()) {
       try {
@@ -1126,7 +1918,7 @@ class NOCDatabase {
   }
 
   // ==========================================================================
-  // USER DATABASE MANAGEMENT (Supabase & Local)
+  // USER DATABASE MANAGEMENT (Aiven, Supabase & Local)
   // ==========================================================================
 
   /**
@@ -1136,60 +1928,70 @@ class NOCDatabase {
     return [
       {
         username: 'ryan',
-        password: 'SBYIM@2026',
+        password: 'spider06',
         role: 'developer',
-        displayName: 'Ryan (Developer)',
-        email: 'ryan@nocportal.gov'
-      },
-      {
-        username: 'admin',
-        password: 'SBYIM@2026',
-        role: 'admin',
-        displayName: 'System Administrator',
-        email: 'admin@nocportal.gov'
+        displayName: 'Ryan Ortiz (Developer)',
+        email: ''
       },
       {
         username: 'SBYIM',
-        password: 'ManagementNOC',
+        password: 'NOC#2022#',
         role: 'admin',
-        displayName: 'SBYIM Management',
-        email: 'sbyim@nocportal.gov'
-      },
-      {
-        username: 'developer',
-        password: 'dev123',
-        role: 'developer',
-        displayName: 'Lead Developer (System Engineer)',
-        email: 'developer@nocportal.gov'
+        displayName: 'SBYI Management',
+        email: ''
       },
       {
         username: 'security',
-        password: 'security123',
+        password: 'sec@2024',
         role: 'security',
-        displayName: 'Security Officer (Lookup & View)',
-        email: 'security@nocportal.gov'
+        displayName: 'SBYIM Security Officer',
+        email: ''
       },
       {
-        username: 'main',
-        password: 'main123',
-        role: 'main',
-        displayName: 'Main Control Officer (Lookup & View)',
-        email: 'main@nocportal.gov'
+        username: 'Employee01',
+        password: '666666@',
+        role: 'employee',
+        displayName: 'Island Security',
+        email: ''
       },
       {
-        username: 'guest',
-        password: 'guest123',
+        username: 'Employee02',
+        password: '777777#',
+        role: 'employee',
+        displayName: 'Inspire Integrated',
+        email: ''
+      },
+      {
+        username: '1GDL',
+        password: '55555',
         role: 'guest',
-        displayName: 'Guest Officer / Viewer',
-        email: 'guest@nocportal.gov'
+        displayName: 'Gulf Dunes Landscapping',
+        email: ''
       }
     ];
   }
 
   /**
-   * Get all user records from Supabase / localStorage
+   * Get all user records from Aiven / Supabase / localStorage
    */
   async getUsers() {
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/users'), { cache: 'no-store' });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && Array.isArray(body.data) && body.data.length > 0) {
+            try {
+              localStorage.setItem('noc_users_v3', JSON.stringify(body.data));
+            } catch (e) {}
+            return body.data;
+          }
+        }
+      } catch (err) {
+        console.warn('Aiven getUsers failed:', err.message);
+      }
+    }
+
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -1200,9 +2002,12 @@ class NOCDatabase {
 
         if (error) throw error;
         if (data && data.length > 0) {
-          const users = data.map(r => this.mapDbToUser(r));
+          const filteredData = data.filter(r => !['admin', 'developer', 'main', 'guest'].includes((r.username || '').toLowerCase()));
+          const users = filteredData.map(r => this.mapDbToUser(r));
           try {
-            localStorage.setItem('noc_users_v1', JSON.stringify(users));
+            localStorage.setItem('noc_users_v3', JSON.stringify(users));
+            localStorage.removeItem('noc_users_v2');
+            localStorage.removeItem('noc_users_v1');
           } catch (e) {}
           return users;
         }
@@ -1212,31 +2017,10 @@ class NOCDatabase {
     }
 
     try {
-      const stored = localStorage.getItem('noc_users_v1');
+      const stored = localStorage.getItem('noc_users_v3') || localStorage.getItem('noc_users_v2') || localStorage.getItem('noc_users_v1');
       if (stored) {
         let parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // If admin exists and ryan doesn't, migrate admin to ryan
-          const adminIdx = parsed.findIndex(u => u.username.toLowerCase() === 'admin');
-          const ryanExists = parsed.some(u => u.username.toLowerCase() === 'ryan');
-          if (adminIdx >= 0 && !ryanExists) {
-            parsed[adminIdx].username = 'ryan';
-            parsed[adminIdx].displayName = 'Ryan (Developer)';
-            parsed[adminIdx].role = 'developer';
-            if (parsed[adminIdx].email === 'admin@nocportal.gov') {
-              parsed[adminIdx].email = 'ryan@nocportal.gov';
-            }
-          }
-          const ryanIdx = parsed.findIndex(u => u.username.toLowerCase() === 'ryan');
-          if (ryanIdx >= 0) {
-            parsed[ryanIdx].role = 'developer';
-            if (parsed[ryanIdx].displayName === 'Ryan (System Administrator)' || parsed[ryanIdx].displayName === 'System Administrator' || !parsed[ryanIdx].displayName) {
-              parsed[ryanIdx].displayName = 'Ryan (Developer)';
-            }
-          }
-          try {
-            localStorage.setItem('noc_users_v1', JSON.stringify(parsed));
-          } catch (e) {}
           return parsed;
         }
       }
@@ -1244,15 +2028,11 @@ class NOCDatabase {
       console.warn('Could not read users from localStorage', e);
     }
 
-    const defaults = this.getDefaultUsers();
-    try {
-      localStorage.setItem('noc_users_v1', JSON.stringify(defaults));
-    } catch (e) {}
-    return defaults;
+    return this.getDefaultUsers();
   }
 
   /**
-   * Save (create or update) a user record in Supabase & localStorage
+   * Save (create or update) a user record in Aiven, Supabase & localStorage
    */
   async saveUser(userData, origUsername = null) {
     if (!userData || !userData.username || !userData.password) {
@@ -1268,6 +2048,21 @@ class NOCDatabase {
     };
 
     const isRenaming = origUsername && String(origUsername).trim().toLowerCase() !== userObj.username.toLowerCase();
+
+    if (this.isAivenActive()) {
+      try {
+        if (isRenaming) {
+          await fetch(this.getApiUrl('/api/users/' + encodeURIComponent(origUsername)), { method: 'DELETE' });
+        }
+        await fetch(this.getApiUrl('/api/users'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(userObj)
+        });
+      } catch (err) {
+        console.warn('Aiven saveUser note:', err.message);
+      }
+    }
 
     if (this.isSupabaseActive()) {
       try {
@@ -1303,7 +2098,7 @@ class NOCDatabase {
     }
 
     try {
-      localStorage.setItem('noc_users_v1', JSON.stringify(users));
+      localStorage.setItem('noc_users_v3', JSON.stringify(users));
     } catch (e) {}
 
     // Refresh auth user cache
@@ -1321,18 +2116,25 @@ class NOCDatabase {
     if (!username) return false;
     const cleanUsername = String(username).trim();
 
-    if (cleanUsername.toLowerCase() === 'admin' || cleanUsername.toLowerCase() === 'ryan') {
-      throw new Error('Cannot delete the primary System Administrator account.');
+    if (cleanUsername.toLowerCase() === 'ryan') {
+      throw new Error('Cannot delete the primary Developer account.');
+    }
+
+    if (this.isAivenActive()) {
+      try {
+        await fetch(this.getApiUrl('/api/users/' + encodeURIComponent(cleanUsername)), { method: 'DELETE' });
+      } catch (err) {
+        console.warn('Aiven deleteUser note:', err.message);
+      }
     }
 
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
-        const { error } = await client
+        await client
           .from('noc_users')
           .delete()
           .ilike('username', cleanUsername);
-        if (error) throw error;
       } catch (err) {
         console.warn('Supabase deleteUser failed:', err.message);
       }
@@ -1340,9 +2142,8 @@ class NOCDatabase {
 
     const users = await this.getUsers();
     const filtered = users.filter(u => u.username.toLowerCase() !== cleanUsername.toLowerCase());
-
     try {
-      localStorage.setItem('noc_users_v1', JSON.stringify(filtered));
+      localStorage.setItem('noc_users_v3', JSON.stringify(filtered));
     } catch (e) {}
 
     if (window.nocAuth && window.nocAuth.refreshUsers) {
@@ -1351,6 +2152,7 @@ class NOCDatabase {
 
     return true;
   }
+
 
   // ==========================================================================
   // 1-CLICK LOCAL TO SUPABASE SYNCHRONIZATION
@@ -1385,58 +2187,91 @@ class NOCDatabase {
       settingsSynced: 0
     };
 
-    // 1. Sync NOC Records in safe batches of 25 (handles 431+ records with attachments)
+    // 1. Sync NOC Records in micro-batches of 5 with automatic single-row fallback
     if (localRecords && localRecords.length > 0) {
       const dbRows = localRecords.map(r => this.mapRecordToDb(r));
-      const BATCH_SIZE = 25;
+      const BATCH_SIZE = 5;
       for (let i = 0; i < dbRows.length; i += BATCH_SIZE) {
         const batch = dbRows.slice(i, i + BATCH_SIZE);
-        const { error: recError } = await client
-          .from('noc_records')
-          .upsert(batch, { onConflict: 'id' });
+        try {
+          const { error: recError } = await client
+            .from('noc_records')
+            .upsert(batch, { onConflict: 'id' });
 
-        if (recError) {
-          console.error(`Batch sync error (${i}-${i + batch.length}):`, recError);
-          throw new Error(`Failed syncing NOC records batch (${i + 1}-${i + batch.length}): ${recError.message}`);
+          if (recError) throw recError;
+          stats.recordsSynced += batch.length;
+        } catch (batchErr) {
+          console.warn(`Batch (${i + 1}-${i + batch.length}) timeout/error, syncing row-by-row...`, batchErr.message);
+          for (let j = 0; j < batch.length; j++) {
+            const singleRow = batch[j];
+            try {
+              const { error: singleError } = await client
+                .from('noc_records')
+                .upsert(singleRow, { onConflict: 'id' });
+              if (singleError) throw singleError;
+              stats.recordsSynced++;
+            } catch (rowErr) {
+              console.warn(`Row ${singleRow.noc_number || (i + j + 1)} insert note:`, rowErr.message);
+              // Retry once
+              try {
+                await client.from('noc_records').upsert(singleRow, { onConflict: 'id' });
+                stats.recordsSynced++;
+              } catch (retryErr) {
+                console.error(`Final failed row ${singleRow.noc_number}:`, retryErr.message);
+              }
+            }
+          }
         }
-        stats.recordsSynced += batch.length;
+
         if (typeof onProgress === 'function') {
           onProgress({ stage: 'records', current: stats.recordsSynced, total: dbRows.length });
         }
       }
     }
 
-    // 2. Sync Requirement Documents
+    // 2. Sync Requirement Documents (Item-by-item to prevent statement timeout on large data URLs)
     if (localReqDocs && localReqDocs.length > 0) {
       const reqRows = localReqDocs.map(d => this.mapReqDocToDb(d));
-      const { error: docError } = await client
-        .from('noc_requirements_docs')
-        .upsert(reqRows, { onConflict: 'id' });
-
-      if (docError) throw new Error(`Failed syncing requirements documents: ${docError.message}`);
-      stats.reqDocsSynced = reqRows.length;
+      for (const row of reqRows) {
+        try {
+          const { error: docError } = await client
+            .from('noc_requirements_docs')
+            .upsert(row, { onConflict: 'id' });
+          if (!docError) stats.reqDocsSynced++;
+        } catch (e) {
+          console.warn('Sync req doc note:', e);
+        }
+      }
     }
 
-    // 3. Sync SBYI COC Documents
+    // 3. Sync SBYI COC Documents (Item-by-item)
     if (localCocDocs && localCocDocs.length > 0) {
       const cocRows = localCocDocs.map(d => this.mapCocDocToDb(d));
-      const { error: cocError } = await client
-        .from('sbyi_coc_docs')
-        .upsert(cocRows, { onConflict: 'id' });
-
-      if (cocError) throw new Error(`Failed syncing SBYI COC documents: ${cocError.message}`);
-      stats.cocDocsSynced = cocRows.length;
+      for (const row of cocRows) {
+        try {
+          const { error: cocError } = await client
+            .from('sbyi_coc_docs')
+            .upsert(row, { onConflict: 'id' });
+          if (!cocError) stats.cocDocsSynced++;
+        } catch (e) {
+          console.warn('Sync coc doc note:', e);
+        }
+      }
     }
 
-    // 4. Sync AI Documents
+    // 4. Sync AI Documents (Item-by-item)
     if (localAiDocs && localAiDocs.length > 0) {
       const aiRows = localAiDocs.map(d => this.mapAiDocToDb(d));
-      const { error: aiError } = await client
-        .from('ai_documents')
-        .upsert(aiRows, { onConflict: 'id' });
-
-      if (aiError) throw new Error(`Failed syncing AI documents: ${aiError.message}`);
-      stats.aiDocsSynced = aiRows.length;
+      for (const row of aiRows) {
+        try {
+          const { error: aiError } = await client
+            .from('ai_documents')
+            .upsert(row, { onConflict: 'id' });
+          if (!aiError) stats.aiDocsSynced++;
+        } catch (e) {
+          console.warn('Sync ai doc note:', e);
+        }
+      }
     }
 
     // 5. Sync Custom Types
@@ -1588,7 +2423,11 @@ class NOCDatabase {
 
   async _localGetAll() {
     const db = await this._getLocalDB();
-    if (!db) return [];
+    if (!db) {
+      return (window.INITIAL_NOC_SEED_DATA && window.INITIAL_NOC_SEED_DATA.length > 0)
+        ? window.INITIAL_NOC_SEED_DATA
+        : [];
+    }
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([LOCAL_STORE_NAME], 'readonly');
       const store = transaction.objectStore(LOCAL_STORE_NAME);
@@ -1596,6 +2435,19 @@ class NOCDatabase {
 
       request.onsuccess = () => {
         let records = request.result || [];
+
+        // If local storage/IndexedDB has no valid records, load from window.INITIAL_NOC_SEED_DATA
+        if (records.length === 0 && window.INITIAL_NOC_SEED_DATA && window.INITIAL_NOC_SEED_DATA.length > 0) {
+          console.log(`IndexedDB store empty. Populating ${window.INITIAL_NOC_SEED_DATA.length} default NOC records...`);
+          records = [...window.INITIAL_NOC_SEED_DATA];
+          // Write to IndexedDB in background
+          this._localBulkInsert(records).catch(() => {});
+          try {
+            localStorage.setItem('noc_records_v2', JSON.stringify(records));
+            localStorage.removeItem('noc_records_v1');
+          } catch (e) {}
+        }
+
         records = records.map(r => {
           if (r && r.issuedTo) {
             r.issuedTo = String(r.issuedTo).trim().toUpperCase();
@@ -1720,6 +2572,95 @@ class NOCDatabase {
       request.onsuccess = () => resolve(true);
       request.onerror = () => reject(request.error);
     });
+  }
+
+  async _localSaveDeleted(record) {
+    if (!record || !record.id) return;
+    const db = await this._getLocalDB();
+    if (db && db.objectStoreNames && db.objectStoreNames.contains(LOCAL_DELETED_STORE_NAME)) {
+      await new Promise((resolve) => {
+        try {
+          const transaction = db.transaction([LOCAL_DELETED_STORE_NAME], 'readwrite');
+          const store = transaction.objectStore(LOCAL_DELETED_STORE_NAME);
+          store.put(record);
+          transaction.oncomplete = () => resolve(true);
+          transaction.onerror = () => resolve(false);
+        } catch (e) {
+          resolve(false);
+        }
+      });
+    }
+    // Also backup in localStorage
+    try {
+      let list = JSON.parse(localStorage.getItem('noc_deleted_records_v1') || '[]');
+      list = list.filter(r => r.id !== record.id);
+      list.unshift(record);
+      localStorage.setItem('noc_deleted_records_v1', JSON.stringify(list));
+    } catch (e) {}
+  }
+
+  async _localGetDeleted() {
+    const db = await this._getLocalDB();
+    if (db && db.objectStoreNames && db.objectStoreNames.contains(LOCAL_DELETED_STORE_NAME)) {
+      try {
+        const records = await new Promise((resolve) => {
+          const transaction = db.transaction([LOCAL_DELETED_STORE_NAME], 'readonly');
+          const store = transaction.objectStore(LOCAL_DELETED_STORE_NAME);
+          const request = store.getAll();
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => resolve([]);
+        });
+        if (records && records.length > 0) {
+          records.sort((a, b) => new Date(b.deletedAt || 0) - new Date(a.deletedAt || 0));
+          return records;
+        }
+      } catch (e) {}
+    }
+    try {
+      const list = JSON.parse(localStorage.getItem('noc_deleted_records_v1') || '[]');
+      list.sort((a, b) => new Date(b.deletedAt || 0) - new Date(a.deletedAt || 0));
+      return list;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async _localRemoveDeleted(id) {
+    const db = await this._getLocalDB();
+    if (db && db.objectStoreNames && db.objectStoreNames.contains(LOCAL_DELETED_STORE_NAME)) {
+      try {
+        await new Promise((resolve) => {
+          const transaction = db.transaction([LOCAL_DELETED_STORE_NAME], 'readwrite');
+          const store = transaction.objectStore(LOCAL_DELETED_STORE_NAME);
+          store.delete(id);
+          transaction.oncomplete = () => resolve(true);
+          transaction.onerror = () => resolve(false);
+        });
+      } catch (e) {}
+    }
+    try {
+      let list = JSON.parse(localStorage.getItem('noc_deleted_records_v1') || '[]');
+      list = list.filter(r => r.id !== id);
+      localStorage.setItem('noc_deleted_records_v1', JSON.stringify(list));
+    } catch (e) {}
+  }
+
+  async _localClearDeleted() {
+    const db = await this._getLocalDB();
+    if (db && db.objectStoreNames && db.objectStoreNames.contains(LOCAL_DELETED_STORE_NAME)) {
+      try {
+        await new Promise((resolve) => {
+          const transaction = db.transaction([LOCAL_DELETED_STORE_NAME], 'readwrite');
+          const store = transaction.objectStore(LOCAL_DELETED_STORE_NAME);
+          store.clear();
+          transaction.oncomplete = () => resolve(true);
+          transaction.onerror = () => resolve(false);
+        });
+      } catch (e) {}
+    }
+    try {
+      localStorage.removeItem('noc_deleted_records_v1');
+    } catch (e) {}
   }
 }
 

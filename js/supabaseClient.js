@@ -8,13 +8,21 @@ class SupabaseConfigManager {
     this.STORAGE_KEY_URL = 'noc_supabase_url';
     this.STORAGE_KEY_KEY = 'noc_supabase_anon_key';
     
-    // Default Supabase Connection
-    this.defaultUrl = 'https://bmgdssuoqqmlfijvkpjv.supabase.co';
-    this.defaultAnonKey = 'sb_publishable_uDFzx7iDOCadMvaBOrkEsQ_uky8sCeI';
+    // Default Supabase connection disconnected (Running in Local Mode)
+    this.defaultUrl = '';
+    this.defaultAnonKey = '';
     
     this.client = null;
     this.isConnected = false;
     this.lastChecked = null;
+
+    // Clear any active Supabase connection keys from localStorage
+    try {
+      localStorage.removeItem(this.STORAGE_KEY_URL);
+      localStorage.removeItem(this.STORAGE_KEY_KEY);
+    } catch (e) {
+      console.warn('Could not clear Supabase keys from localStorage', e);
+    }
 
     this.initClient();
   }
@@ -28,13 +36,10 @@ class SupabaseConfigManager {
       if (stored !== null && stored.trim() !== '') {
         return stored.trim();
       }
-      if (stored === '') {
-        return '';
-      }
     } catch (e) {
       console.warn('Could not read Supabase URL from localStorage', e);
     }
-    return this.defaultUrl;
+    return '';
   }
 
   /**
@@ -46,13 +51,10 @@ class SupabaseConfigManager {
       if (stored !== null && stored.trim() !== '') {
         return stored.trim();
       }
-      if (stored === '') {
-        return '';
-      }
     } catch (e) {
       console.warn('Could not read Supabase Anon Key from localStorage', e);
     }
-    return this.defaultAnonKey;
+    return '';
   }
 
   /**
@@ -87,8 +89,8 @@ class SupabaseConfigManager {
    */
   clearCredentials() {
     try {
-      localStorage.setItem(this.STORAGE_KEY_URL, '');
-      localStorage.setItem(this.STORAGE_KEY_KEY, '');
+      localStorage.removeItem(this.STORAGE_KEY_URL);
+      localStorage.removeItem(this.STORAGE_KEY_KEY);
     } catch (e) {
       console.error('Error clearing Supabase credentials:', e);
     }

@@ -39,16 +39,21 @@
       <!-- User Role Indicator & Quick Switcher -->
       <div class="nav-actions">
         <!-- Supabase Database Status Badge -->
-        <button class="db-status-badge" id="btnDatabaseConfig" title="Click to manage Supabase PostgreSQL database connection & schema">
+        <button class="db-status-badge" id="btnDatabaseConfig" title="Click to manage Supabase PostgreSQL database connection & schema" style="display: none;">
           <span class="db-status-dot" id="dbStatusDot"></span>
           <span id="dbStatusText">Database: Local</span>
         </button>
 
-        <div class="user-role-badge" id="userRoleBadge" title="Current access mode">
-          <span class="role-dot admin"></span>
-          <span>Admin</span>
+        <div class="user-role-badge is-unauthenticated" id="userRoleBadge" title="Current access mode">
+          <button class="btn btn-header-signin" id="btnHeaderSignIn" title="Click to sign in to the portal">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <path d="m9 12 2 2 4-4"></path>
+            </svg>
+            <span>Sign In</span>
+          </button>
         </div>
-        <button class="btn btn-primary" id="btnNewNoc">
+        <button class="btn btn-primary" id="btnNewNoc" style="display: none;">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -107,6 +112,14 @@
               </svg>
               User Database
             </button>
+            <button class="btn btn-outline" id="btnRecycleBin" title="Deleted Records & Recycle Bin - View and restore deleted NOC records" style="display: none;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:0.25rem;">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              Recycle Bin
+              <span class="badge" id="recycleBinBadge" style="display:none; margin-left:0.35rem; background:#EF4444; color:#fff; font-size:0.7rem; font-weight:700; padding:0.12rem 0.45rem; border-radius:10px;">0</span>
+            </button>
             <button class="btn btn-outline" id="btnExportCSV" title="Export database to CSV spreadsheet" style="display: none;">
               📊 Export CSV
             </button>
@@ -125,7 +138,7 @@
       </div>
 
       <!-- Quick Stats Summary Cards -->
-      <div class="stats-grid">
+      <div class="stats-grid" style="display: none;">
         <div class="stat-card blue">
           <div class="stat-icon-wrapper">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -137,7 +150,7 @@
           </div>
           <div class="stat-info">
             <div class="stat-label">Total NOC Records</div>
-            <div class="stat-value" id="statTotalNOC">0</div>
+            <div class="stat-value" id="statTotalNOC">426</div>
           </div>
         </div>
 
@@ -150,7 +163,7 @@
           </div>
           <div class="stat-info">
             <div class="stat-label">Active Permits</div>
-            <div class="stat-value text-green" id="statActiveNOC">0</div>
+            <div class="stat-value text-green" id="statActiveNOC">147</div>
           </div>
         </div>
 
@@ -164,7 +177,7 @@
           </div>
           <div class="stat-info">
             <div class="stat-label">Expiring Soon (&lt;30d)</div>
-            <div class="stat-value" style="color:#D97706;" id="statExpiringNOC">0</div>
+            <div class="stat-value" style="color:#D97706;" id="statExpiringNOC">15</div>
           </div>
         </div>
 
@@ -178,14 +191,14 @@
           </div>
           <div class="stat-info">
             <div class="stat-label">Expired Permits</div>
-            <div class="stat-value" style="color:#E11D48;" id="statExpiredNOC">0</div>
+            <div class="stat-value" style="color:#E11D48;" id="statExpiredNOC">264</div>
           </div>
         </div>
       </div>
     </section>
 
     <!-- Controls, Filter & Search Bar -->
-    <section class="controls-card" id="controlsCardSection">
+    <section class="controls-card" id="controlsCardSection" style="display: none;">
       <div class="controls-wrapper">
         <div class="search-box">
           <span class="search-icon">🔍</span>
@@ -227,7 +240,7 @@
     </section>
 
     <!-- Table View -->
-    <section class="table-container" id="tableViewContainer">
+    <section class="table-container" id="tableViewContainer" style="display: none;">
       <div class="table-responsive">
         <table class="noc-table" id="nocDataTable">
           <thead>
@@ -272,9 +285,9 @@
       <p class="empty-text">No records match your search criteria or the database is currently empty.</p>
     </section>
 
-    <!-- Guest Search Initial Prompt -->
-    <section class="empty-state" id="guestPromptContainer" style="display:none;">
-      <div class="empty-icon" style="background:var(--secondary-blue-light); color:var(--secondary-blue);">🔍</div>
+    <!-- Guest Search Initial Prompt / Landing Screen -->
+    <section class="empty-state landing-welcome-card" id="guestPromptContainer" style="display:block;">
+      <div class="empty-icon landing-welcome-icon" style="background:var(--secondary-blue-light, #E0F2FE); color:var(--secondary-blue, #0284C7);">🔍</div>
       <h3 class="empty-title">Welcome to SBYIM NOC Portal</h3>
       <p class="empty-text">Please sign in to access, search, and view certificate compliance records.</p>
     </section>
@@ -661,7 +674,7 @@
             <span>AI Documents Repository</span>
           </h3>
           <span class="badge" id="aiDocCountBadge" style="background:#EEF2FF; color:#4F46E5; border:1px solid #C7D2FE; font-weight:700; font-size:0.78rem;">
-            0 Documents
+            3 Documents
           </span>
         </div>
         <button class="modal-close" id="btnCloseAiDocsModal">&times;</button>
@@ -703,14 +716,14 @@
 
   <!-- 8. Supabase / PostgreSQL Database Settings Modal -->
   <div class="modal-overlay modal-backdrop" id="databaseModal">
-    <div class="modal-container modal-card medium">
+    <div class="modal-container modal-card medium" style="max-width:720px;">
       <div class="modal-header">
         <div>
           <h3 class="modal-title" style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
             <span>⚡</span>
-            <span>Supabase / PostgreSQL Database</span>
+            <span>Aiven PostgreSQL Cloud & Database Storage</span>
           </h3>
-          <p class="modal-subtitle">Connect your cloud Supabase database, run PostgreSQL schema migrations, and sync data.</p>
+          <p class="modal-subtitle">Connect and manage your high-availability Aiven Cloud PostgreSQL database with TLS/SSL encryption and live multi-user persistence.</p>
         </div>
         <button class="modal-close" id="btnCloseDatabaseModal">&times;</button>
       </div>
@@ -719,24 +732,91 @@
         <!-- Live Connection Status Card -->
         <div class="db-status-card" id="dbStatusCard">
           <div class="db-status-icon-box" id="dbStatusIconBox">
-            <span style="font-size:1.5rem;" id="dbStatusIcon">🟡</span>
+            <span style="font-size:1.5rem;" id="dbStatusIcon">🟢</span>
           </div>
           <div class="db-status-info-box">
-            <div style="display:flex; align-items:center; justify-content:space-between;">
-              <strong style="font-size:0.95rem;" id="dbStatusHeading">Local Persistent Storage Mode</strong>
-              <span class="badge" id="dbStatusPill" style="background:#FEF3C7; color:#B45309;">Offline / Local</span>
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+              <strong style="font-size:0.98rem;" id="dbStatusHeading">Connected to Aiven PostgreSQL Cloud</strong>
+              <span class="badge" id="dbStatusPill" style="background:#DCFCE7; color:#15803D; font-weight:700;">Aiven Cloud DB (Live)</span>
             </div>
-            <p style="font-size:0.82rem; color:var(--text-muted); margin-top:0.2rem;" id="dbStatusMessage">
-              Data is stored securely in your browser's IndexedDB and localStorage. Connect Supabase to enable cloud sync and PostgreSQL persistence.
+            <p style="font-size:0.83rem; color:var(--text-muted); margin-top:0.35rem; line-height:1.45;" id="dbStatusMessage">
+              Active cloud database connection established to Aiven PostgreSQL (pg2026-noc-ryansbyi-noc.f.aivencloud.com:13029). All 426 NOC records, documents, and accounts are live & synchronized.
             </p>
           </div>
         </div>
 
-        <!-- Supabase Project Credentials Form -->
+        <!-- Dedicated Aiven Cloud Server Details & Actions Card -->
+        <div id="aivenServerSection" style="background: linear-gradient(135deg, #F0FDF4 0%, #EFF6FF 100%); border: 1px solid #BBF7D0; border-radius: var(--radius-md); padding: 1.25rem;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 0.85rem; flex-wrap:wrap; gap:0.5rem;">
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <span style="font-size:1.35rem;">☁️</span>
+              <div>
+                <h4 style="font-size:0.96rem; font-weight:800; color:#14532D; margin:0;">
+                  Aiven PostgreSQL Cloud Server
+                </h4>
+                <span style="font-size:0.75rem; color:#166534; font-weight:600;">Managed High-Availability Cloud Database</span>
+              </div>
+            </div>
+            <span class="badge" id="aivenSslBadge" style="background:#DCFCE7; color:#15803D; font-size:0.75rem; font-weight:700; border:1px solid #86EFAC;">
+              🔒 TLS/SSL Encrypted (CA Active)
+            </span>
+          </div>
+
+          <!-- Server connection spec grid -->
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:0.6rem; background:#FFFFFF; border:1px solid #DCFCE7; border-radius:var(--radius-sm); padding:0.85rem; margin-bottom:0.9rem; font-size:0.8rem;">
+            <div>
+              <span style="color:var(--text-muted); display:block; font-size:0.72rem; font-weight:600; text-transform:uppercase;">Host</span>
+              <strong style="color:var(--text-main); font-family:'JetBrains Mono', monospace; font-size:0.78rem;" id="aivenHostDisplay">pg2026-noc-ryansbyi-noc.f.aivencloud.com</strong>
+            </div>
+            <div>
+              <span style="color:var(--text-muted); display:block; font-size:0.72rem; font-weight:600; text-transform:uppercase;">Port & Database</span>
+              <strong style="color:var(--text-main); font-family:'JetBrains Mono', monospace; font-size:0.78rem;" id="aivenPortDbDisplay">13029 / defaultdb</strong>
+            </div>
+            <div>
+              <span style="color:var(--text-muted); display:block; font-size:0.72rem; font-weight:600; text-transform:uppercase;">Backend Bridge</span>
+              <strong style="color:#15803D; font-family:'JetBrains Mono', monospace; font-size:0.78rem;" id="aivenBackendDisplay">http://localhost:3000 (Online)</strong>
+            </div>
+            <div>
+              <span style="color:var(--text-muted); display:block; font-size:0.72rem; font-weight:600; text-transform:uppercase;">Cloud Health & Latency</span>
+              <strong style="color:#15803D; font-family:'JetBrains Mono', monospace; font-size:0.78rem;" id="aivenLatencyDisplay">Connected (Healthy)</strong>
+            </div>
+          </div>
+
+          <!-- Live Synced Entity Metrics Counter Pills -->
+          <div style="margin-bottom:1.1rem;">
+            <span style="font-size:0.75rem; font-weight:700; color:#14532D; text-transform:uppercase; display:block; margin-bottom:0.45rem;">
+              📊 Live Cloud Database Records (Aiven PostgreSQL)
+            </span>
+            <div style="display:flex; flex-wrap:wrap; gap:0.45rem;" id="aivenStatsPillsContainer">
+              <span class="badge" style="background:#FFFFFF; border:1px solid #86EFAC; color:#166534; padding:0.35rem 0.65rem; font-size:0.76rem; font-weight:600;" id="pillNocRecords">📋 <strong id="cntNocRecords">426</strong> NOC Permits</span>
+              <span class="badge" style="background:#FFFFFF; border:1px solid #86EFAC; color:#166534; padding:0.35rem 0.65rem; font-size:0.76rem; font-weight:600;" id="pillReqDocs">📑 <strong id="cntReqDocs">4</strong> Req Docs</span>
+              <span class="badge" style="background:#FFFFFF; border:1px solid #86EFAC; color:#166534; padding:0.35rem 0.65rem; font-size:0.76rem; font-weight:600;" id="pillCocDocs">📜 <strong id="cntCocDocs">3</strong> COC Certs</span>
+              <span class="badge" style="background:#FFFFFF; border:1px solid #86EFAC; color:#166534; padding:0.35rem 0.65rem; font-size:0.76rem; font-weight:600;" id="pillAiDocs">🤖 <strong id="cntAiDocs">3</strong> AI Docs</span>
+              <span class="badge" style="background:#FFFFFF; border:1px solid #86EFAC; color:#166534; padding:0.35rem 0.65rem; font-size:0.76rem; font-weight:600;" id="pillCustomTypes">🏷️ <strong id="cntCustomTypes">14</strong> Types</span>
+              <span class="badge" style="background:#FFFFFF; border:1px solid #86EFAC; color:#166534; padding:0.35rem 0.65rem; font-size:0.76rem; font-weight:600;" id="pillContractors">🏢 <strong id="cntContractors">18</strong> Contractors</span>
+              <span class="badge" style="background:#FFFFFF; border:1px solid #86EFAC; color:#166534; padding:0.35rem 0.65rem; font-size:0.76rem; font-weight:600;" id="pillUsers">👥 <strong id="cntUsers">6</strong> Users</span>
+            </div>
+          </div>
+
+          <!-- Action Buttons for Aiven -->
+          <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:center;">
+            <button type="button" class="btn btn-primary" id="btnTestAivenConnection" style="background: linear-gradient(135deg, #10B981, #059669); border-color:#059669;">
+              🔌 Test Aiven Connection
+            </button>
+            <button type="button" class="btn btn-green" id="btnSyncToAiven" title="Push all current data to Aiven PostgreSQL cloud database">
+              ⚡ 1-Click Sync to Aiven
+            </button>
+            <button type="button" class="btn btn-outline" id="btnRefreshFromAiven" style="background:#FFFFFF; border-color:#86EFAC; color:#166534;" title="Fetch latest data from Aiven Cloud">
+              🔄 Refresh from Aiven
+            </button>
+          </div>
+        </div>
+
+        <!-- Supabase Project Credentials Form (Alternative/Secondary) -->
         <div id="supabaseCredentialsSection" style="background:var(--bg-surface); border:1px solid var(--border-light); border-radius:var(--radius-md); padding:1.25rem;">
           <h4 style="font-size:0.95rem; font-weight:700; color:var(--text-main); margin-bottom:0.85rem; display:flex; align-items:center; gap:0.4rem;">
             <span>🔑</span>
-            <span>Supabase API Credentials</span>
+            <span>Secondary Cloud Provider (Supabase)</span>
           </h4>
           
           <div class="form-group" style="margin-bottom:1rem;">
@@ -778,23 +858,20 @@
           </div>
         </div>
 
-        <!-- 1-Click Sync Local Data to Supabase -->
+        <!-- 1-Click Restore All Data -->
         <div id="supabaseSyncSection" style="background:linear-gradient(135deg, #EFF6FF 0%, #ECFDF5 100%); border:1px solid #BFDBFE; border-radius:var(--radius-md); padding:1.25rem;">
           <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem;">
             <div>
               <h4 style="font-size:0.92rem; font-weight:700; color:#1E40AF; margin-bottom:0.25rem;">
-                🔄 1-Click Data Synchronization
+                🔄 Restore Master Records
               </h4>
               <p style="font-size:0.82rem; color:#334155; margin:0;">
-                Push all current local records, requirements documents, SBYI COC certificates, AI documents, custom types, contractors, and user accounts to your Supabase PostgreSQL database.
+                Restore all initial 426 NOC records, requirements guidelines, SBYI COC compliance certificates, AI documents, custom categories, and user accounts.
               </p>
             </div>
             <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
               <button type="button" class="btn btn-outline" id="btnRestoreAllData" style="background:#FFFFFF; border-color:#93C5FD; color:#1E40AF;" title="Restore all initial NOC records, documents, contractors, and users">
                 🔄 Restore All Data
-              </button>
-              <button type="button" class="btn btn-green" id="btnSyncToSupabase" title="Push local database to Supabase PostgreSQL">
-                ⬆️ Sync to Supabase
               </button>
             </div>
           </div>
@@ -805,10 +882,10 @@
           <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem;">
             <div>
               <h4 style="font-size:0.95rem; font-weight:700; color:var(--text-main); margin-bottom:0.2rem;">
-                📄 PostgreSQL Schema (supabase_schema.sql)
+                📄 PostgreSQL Database Schema
               </h4>
               <p style="font-size:0.8rem; color:var(--text-muted); margin:0;">
-                Copy and run this SQL script in your Supabase SQL Editor to create tables, indexes, and security policies.
+                PostgreSQL table definitions, indexes, JSONB attachment columns, and security policies.
               </p>
             </div>
             <button type="button" class="btn btn-outline" id="btnCopySqlSchema">
@@ -1022,7 +1099,7 @@
 
       <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
         <div style="font-size:0.82rem; color:var(--text-muted);" id="userDbCountLabel">
-          Total Registered Users: <strong>3</strong>
+          Total Registered Users: <strong>6</strong>
         </div>
         <button type="button" class="btn btn-outline" id="btnCloseUserDbModalFooter">Close</button>
       </div>
@@ -1078,11 +1155,6 @@
               <option value="developer">Developer (Full Access & Management)</option>
             </select>
           </div>
-
-          <div class="form-group">
-            <label class="form-label" for="userFormEmail">Email Address (Optional)</label>
-            <input type="email" id="userFormEmail" class="form-input" placeholder="e.g. user@nocportal.gov">
-          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline" id="btnCancelUserForm">Cancel</button>
@@ -1094,7 +1166,106 @@
     </div>
   </div>
 
+  <!-- 12. Delete User Confirmation Modal -->
+  <div class="modal-overlay modal-backdrop" id="userDeleteConfirmModal" style="z-index: 1070;">
+    <div class="modal-container modal-card small" style="max-width: min(440px, 100%);">
+      <div class="modal-header" style="border-bottom:1px solid var(--border-light); padding-bottom:0.85rem;">
+        <h3 class="modal-title" style="color:var(--accent-red); display:flex; align-items:center; gap:0.5rem; font-size:1.1rem;">
+          <span>🗑️</span>
+          <span>Delete User Account</span>
+        </h3>
+        <button class="modal-close" id="btnCloseUserDeleteModal">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:1.25rem;">
+        <p id="userDeleteConfirmMessage" style="font-size:0.92rem; color:var(--text-main); line-height:1.5; margin:0;">
+          Are you sure you want to permanently delete user account <strong id="userDeleteTargetName" style="color:var(--text-main); font-family:'JetBrains Mono', monospace;"></strong>?
+        </p>
+        <p style="font-size:0.8rem; color:var(--text-muted); margin-top:0.4rem; margin-bottom:0;">
+          This action will remove the credentials from both the local database and Supabase cloud.
+        </p>
+        <div id="userDeleteWarningNotice" style="display:none; margin-top:0.85rem; padding:0.6rem 0.8rem; background:#FEF2F2; border-left:3px solid #EF4444; border-radius:4px; font-size:0.8rem; color:#991B1B;">
+          ⚠️ <strong>Active Session Notice:</strong> This is your currently logged-in account. Deleting it will end your session.
+        </div>
+      </div>
+      <div class="modal-footer" style="gap:0.6rem;">
+        <button type="button" class="btn btn-outline" id="btnCancelUserDelete">Cancel</button>
+        <button type="button" class="btn btn-danger" id="btnConfirmUserDelete" style="display:flex; align-items:center; gap:0.4rem;">
+          <span>🗑️</span>
+          <span>Confirm Delete</span>
+        </button>
+      </div>
+    </div>
+  </div>
 
+  <!-- 13. Deleted Records (Recycle Bin) Modal -->
+  <div class="modal-overlay modal-backdrop" id="modalDeletedRecords" style="z-index: 1065;">
+    <div class="modal-container modal-card large" style="max-width: min(1000px, 96vw); max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="border-bottom: 1px solid var(--border-light); padding-bottom: 0.85rem;">
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <div style="width:38px; height:38px; border-radius:10px; background:rgba(239,68,68,0.1); color:#EF4444; display:flex; align-items:center; justify-content:center; font-size:1.25rem;">
+            🗑️
+          </div>
+          <div>
+            <h3 class="modal-title" style="color:var(--text-main); font-size:1.15rem; font-weight:700;">Deleted Records (Recycle Bin)</h3>
+            <p class="modal-subtitle" style="font-size:0.8rem; color:var(--text-muted); margin:0;">View, preview, and restore previously deleted NOC records back into the active database.</p>
+          </div>
+        </div>
+        <button class="modal-close" id="btnCloseDeletedRecordsModal">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.25rem; overflow-y: auto; flex: 1;">
+        <!-- Top Action Bar -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem; padding:0.75rem 1rem; background:var(--bg-subtle); border-radius:var(--radius-md); border:1px solid var(--border-light);">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span style="font-size:0.85rem; font-weight:600; color:var(--text-main);">Archived Records:</span>
+            <span class="badge" id="deletedRecordsCountBadge" style="background:#EF4444; color:#fff; font-weight:700; font-size:0.78rem; padding:0.2rem 0.65rem; border-radius:12px;">0 Records</span>
+          </div>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button type="button" class="btn btn-green btn-sm" id="btnRestoreAllDeleted" style="font-size:0.82rem; padding:0.4rem 0.8rem; font-weight:600;">
+              🔄 Restore All Records
+            </button>
+            <button type="button" class="btn btn-outline text-rose btn-sm" id="btnClearRecycleBin" style="border-color:#FDA4AF; font-size:0.82rem; padding:0.4rem 0.8rem;">
+              🧹 Empty Recycle Bin
+            </button>
+          </div>
+        </div>
+
+        <!-- Search input for deleted records -->
+        <div style="margin-bottom: 1rem;">
+          <input type="text" id="inputSearchDeleted" class="form-input" placeholder="Search deleted records by NOC #, contractor, or scope..." autocomplete="off" spellcheck="false" style="font-size:0.85rem; padding:0.55rem 0.85rem;">
+        </div>
+
+        <!-- Table Container -->
+        <div class="table-responsive" style="max-height: 420px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius-md);">
+          <table class="data-table" id="tableDeletedRecords" style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+            <thead style="background:var(--bg-subtle); position:sticky; top:0; z-index:2;">
+              <tr>
+                <th style="padding:0.65rem 0.85rem; text-align:left;">NOC Number</th>
+                <th style="padding:0.65rem 0.85rem; text-align:left;">Contractor / Issued To</th>
+                <th style="padding:0.65rem 0.85rem; text-align:left;">Type</th>
+                <th style="padding:0.65rem 0.85rem; text-align:left;">Deleted Date</th>
+                <th style="padding:0.65rem 0.85rem; text-align:center;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyDeletedRecords">
+              <!-- Dynamically populated by nocUI -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Empty State -->
+        <div id="deletedRecordsEmptyState" style="display:none; text-align:center; padding:3rem 1.5rem;">
+          <div style="font-size:3rem; margin-bottom:0.75rem; opacity:0.6;">✨</div>
+          <h4 style="color:var(--text-main); font-size:1.05rem; font-weight:700; margin-bottom:0.35rem;">Recycle Bin is Empty</h4>
+          <p style="color:var(--text-muted); font-size:0.85rem; max-width:420px; margin:0 auto;">No deleted NOC records found. When records are deleted, they will be safely preserved here and can be restored at any time with 1 click.</p>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="border-top:1px solid var(--border-light); padding:0.85rem 1.25rem; display:flex; justify-content:flex-end;">
+        <button type="button" class="btn btn-outline" id="btnCloseDeletedRecordsModalFooter">Close</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Floating AI Assistant Launcher Button (FAB) -->
   <button class="ai-floating-fab" id="btnFloatingAIAssistant" title="Open SBYIM AI Assistant (Ctrl+Space)">

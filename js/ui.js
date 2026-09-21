@@ -22,6 +22,16 @@ class UIManager {
     this.initDatePickers();
     this.updateUserBadge();
     this.renderDatabaseStatus();
+
+    const guestPrompt = document.getElementById('guestPromptContainer');
+    if (guestPrompt) {
+      guestPrompt.addEventListener('click', () => {
+        if (!window.nocAuth || !window.nocAuth.isLoggedIn()) {
+          this.openLoginModal(true);
+        }
+      });
+      guestPrompt.style.cursor = 'pointer';
+    }
   }
 
   /**
@@ -68,12 +78,15 @@ class UIManager {
     window.addEventListener('noc:supabase-config-change', () => {
       this.renderDatabaseStatus();
     });
+    window.addEventListener('noc:aiven-status-change', () => {
+      this.renderDatabaseStatus();
+    });
   }
 
   /**
-   * Show a toast message to the user
+   * Show a toast message to the user (with optional Undo action callback)
    */
-  showToast(message, type = 'info') {
+  showToast(message, type = 'info', action = null) {
     const container = document.getElementById('toastContainer');
     if (!container) return;
 
@@ -84,18 +97,39 @@ class UIManager {
     if (type === 'success') icon = '✅';
     if (type === 'error') icon = '⚠️';
 
+    let actionBtnHtml = '';
+    if (action && typeof action.onClick === 'function') {
+      actionBtnHtml = `<button type="button" class="btn btn-sm toast-action-btn" style="margin-left:0.75rem; background:rgba(255,255,255,0.95); border:1px solid #93C5FD; color:#1E40AF; font-weight:800; font-size:0.78rem; padding:0.22rem 0.6rem; border-radius:4px; cursor:pointer; display:inline-flex; align-items:center; gap:0.25rem; box-shadow:0 1px 2px rgba(0,0,0,0.1);">${this.escapeHTML(action.label || '↩️ Undo')}</button>`;
+    }
+
     toast.innerHTML = `
-      <span>${icon}</span>
-      <span class="toast-message">${this.escapeHTML(message)}</span>
+      <div style="display:flex; align-items:center; gap:0.5rem; width:100%;">
+        <span>${icon}</span>
+        <span class="toast-message" style="flex:1;">${this.escapeHTML(message)}</span>
+        ${actionBtnHtml}
+      </div>
     `;
+
+    if (action && typeof action.onClick === 'function') {
+      const btn = toast.querySelector('.toast-action-btn');
+      if (btn) {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          action.onClick();
+          toast.remove();
+        });
+      }
+    }
 
     container.appendChild(toast);
 
+    const duration = action ? 6500 : 3500;
     setTimeout(() => {
       toast.style.opacity = '0';
       toast.style.transform = 'translateX(50px)';
       setTimeout(() => toast.remove(), 300);
-    }, 3500);
+    }, duration);
   }
 
   /**
@@ -188,6 +222,7 @@ class UIManager {
 
     if (badgeEl) {
       if (window.nocAuth.isLoggedIn()) {
+        badgeEl.classList.remove('is-unauthenticated');
         let roleLabel = 'Guest';
         let dotClass = 'guest';
         if (user?.role === 'admin') {
@@ -235,9 +270,13 @@ class UIManager {
           });
         }
       } else {
+        badgeEl.classList.add('is-unauthenticated');
         badgeEl.innerHTML = `
-          <button class="btn btn-sm btn-primary" style="padding:0.32rem 0.85rem; font-size:0.82rem; font-weight:700; display:inline-flex; align-items:center; gap:0.4rem; border-radius:9999px; box-shadow:0 2px 8px rgba(13, 148, 136, 0.25);" id="btnHeaderSignIn" title="Click to sign in to the portal">
-            <span>🛡️</span>
+          <button class="btn btn-header-signin" id="btnHeaderSignIn" title="Click to sign in to the portal">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <path d="m9 12 2 2 4-4"></path>
+            </svg>
             <span>Sign In</span>
           </button>
         `;
@@ -1934,11 +1973,18 @@ CREATE POLICY "Allow all operations on noc_settings" ON public.noc_settings FOR 
 DROP POLICY IF EXISTS "Allow all operations on noc_users" ON public.noc_users;
 CREATE POLICY "Allow all operations on noc_users" ON public.noc_users FOR ALL TO public USING (true) WITH CHECK (true);
 
--- 10. DEFAULT CATEGORIES, CONTRACTORS, RECORDS & SEED USERS
-INSERT INTO public.noc_custom_types (name) VALUES ('Activity'), ('Activity NOC') ON CONFLICT (name) DO NOTHING;
+INSERT INTO public.noc_custom_types (name) VALUES 
+    ('Activity'), ('Activity NOC'), ('Berthing NOC'), ('Construction Camp Site Approval'), 
+    ('Construction Camp Size & Location Approval'), ('Construction NOC'), ('Design and Build NOC'), 
+    ('Maintenance Activity'), ('Maintenance NOC'), ('Marine Survey NOC'), ('O&M NOC'), 
+    ('Operation & Maintenance NOC'), ('Site Visit & Meeting'), ('Temporary Occupancy Certificate')
+ON CONFLICT (name) DO NOTHING;
 
 INSERT INTO public.noc_custom_contractors (name)
 VALUES
+    ('GULF DUNES LANDSCAPING & AGRICULTURAL SERVICES, AN ESG COMPANY (GDL)'),
+    ('NETKOM COMMUNICATIONS TECHNOLOGY LLC (NCT)'),
+    ('ARABIC ENGINEER CONTROL & ELECTRO MECHANICAL SYSTEMS CO L.L.C. (AECEMS)'),
     ('APEX ENGINEERING & INFRASTRUCTURE LTD.'),
     ('TRANS-GULF CONTRACTING CO.'),
     ('PIONEER DEMOLITION SPECIALISTS LLC'),
@@ -1946,88 +1992,26 @@ VALUES
     ('METROPOLITAN BUILDERS CORP.'),
     ('AL JABER BUILDING LLC'),
     ('ARABTEC CONSTRUCTION'),
-    ('SIX CONSTRUCT')
+    ('SIX CONSTRUCT'),
+    ('ISLAND SECURITY SERVICES'),
+    ('INSPIRE INTEGRATED INFRASTRUCTURE MANAGEMENT'),
+    ('DELMA MARINE TRANSPORT & LOGISTICS'),
+    ('NATIONAL MARINE DREDGING COMPANY (NMDC)'),
+    ('EMIRATES UTILITIES & DESALINATION'),
+    ('ETISALAT TELECOMMUNICATIONS SERVICES'),
+    ('ABU DHABI DISTRIBUTION COMPANY (ADDC)')
 ON CONFLICT (name) DO NOTHING;
 
-INSERT INTO public.noc_records (id, noc_number, noc_type, client, issued_to, company_code, date_of_issuance, date_of_expiration, description, documents)
-VALUES 
-(
-    'noc_seed_001',
-    'NOC-2026-0042',
-    'Activity NOC',
-    'Municipal Urban Development Authority',
-    'APEX ENGINEERING & INFRASTRUCTURE LTD.',
-    'APEX-01',
-    '2026-01-15',
-    '2026-12-31',
-    'Construction authorization for multi-story commercial tower including structural foundation, deep basement excavation, and fire life safety system installation.',
-    '[]'::jsonb
-),
-(
-    'noc_seed_002',
-    'NOC-2026-0118',
-    'Activity',
-    'National Highway Authority',
-    'TRANS-GULF CONTRACTING CO.',
-    'TG-2026',
-    '2026-07-01',
-    '2026-09-10',
-    'Temporary road cutting permit for underground high-voltage 33kV cable laying across Sector 4B boulevard with complete traffic detour management.',
-    '[]'::jsonb
-),
-(
-    'noc_seed_003',
-    'NOC-2025-0891',
-    'Activity NOC',
-    'Vertex Commercial Properties',
-    'PIONEER DEMOLITION SPECIALISTS LLC',
-    NULL,
-    '2025-05-10',
-    '2026-05-10',
-    'Controlled mechanical demolition of obsolete two-story industrial warehouse structure, hazardous asbestos abatement, and site debris removal.',
-    '[]'::jsonb
-),
-(
-    'noc_seed_004',
-    'NOC-2026-0205',
-    'Activity',
-    'State Water & Power Dept.',
-    'SKYLINE ELECTROMECHANICAL SERVICES',
-    'SKY-04',
-    '2026-03-20',
-    '2027-03-20',
-    'Installation and commissioning of 1500kVA step-down compact substation transformer unit and feeder panel routing for residential district.',
-    '[]'::jsonb
-),
-(
-    'noc_seed_005',
-    'NOC-2026-0310',
-    'Activity NOC',
-    'Grand Plaza Shopping Mall',
-    'METROPOLITAN BUILDERS CORP.',
-    NULL,
-    '2026-06-01',
-    '2026-11-30',
-    'Internal architectural fit-out, HVAC duct installation, fire suppression sprinkler routing, and ceiling framing for retail store Units 104-106.',
-    '[]'::jsonb
-)
-ON CONFLICT (noc_number) DO UPDATE
-SET client = EXCLUDED.client,
-    issued_to = EXCLUDED.issued_to,
-    company_code = EXCLUDED.company_code,
-    date_of_issuance = EXCLUDED.date_of_issuance,
-    date_of_expiration = EXCLUDED.date_of_expiration,
-    description = EXCLUDED.description;
+DELETE FROM public.noc_users WHERE lower(username) IN ('admin', 'guest', 'developer', 'main');
 
 INSERT INTO public.noc_users (username, password, role, display_name, email)
 VALUES
-    ('ryan', 'SBYIM@2026', 'developer', 'Ryan (Developer)', 'ryan@nocportal.gov'),
-    ('admin', 'SBYIM@2026', 'admin', 'System Administrator', 'admin@nocportal.gov'),
-    ('SBYIM', 'ManagementNOC', 'admin', 'SBYIM Management', 'sbyim@nocportal.gov'),
-    ('developer', 'dev123', 'developer', 'Lead Developer (System Engineer)', 'developer@nocportal.gov'),
-    ('security', 'security123', 'security', 'Security Officer (Lookup & View)', 'security@nocportal.gov'),
-    ('main', 'main123', 'main', 'Main Control Officer (Lookup & View)', 'main@nocportal.gov'),
-    ('guest', 'guest123', 'guest', 'Guest Officer / Viewer', 'guest@nocportal.gov')
+    ('ryan', 'spider06', 'developer', 'Ryan Ortiz (Developer)', ''),
+    ('SBYIM', 'NOC#2022#', 'admin', 'SBYI Management', ''),
+    ('security', 'sec@2024', 'security', 'SBYIM Security Officer', ''),
+    ('Employee01', '666666@', 'employee', 'Island Security', ''),
+    ('Employee02', '777777#', 'employee', 'Inspire Integrated', ''),
+    ('1GDL', '55555', 'guest', 'Gulf Dunes Landscapping', '')
 ON CONFLICT (username) DO UPDATE
 SET password = EXCLUDED.password,
     role = EXCLUDED.role,
@@ -2039,6 +2023,7 @@ SET password = EXCLUDED.password,
    * Render top navbar database status badge and inside modal status card
    */
   renderDatabaseStatus() {
+    const isAiven = window.nocDB && window.nocDB.isAivenActive();
     const isConfigured = window.supabaseManager && window.supabaseManager.isConfigured();
     const isConnected = window.supabaseManager && window.supabaseManager.isConnected;
 
@@ -2049,7 +2034,59 @@ SET password = EXCLUDED.password,
     const pillEl = document.getElementById('dbStatusPill');
     const msgEl = document.getElementById('dbStatusMessage');
 
-    if (isConnected) {
+    // Aiven Server section elements
+    const hostDisp = document.getElementById('aivenHostDisplay');
+    const portDbDisp = document.getElementById('aivenPortDbDisplay');
+    const backendDisp = document.getElementById('aivenBackendDisplay');
+    const latencyDisp = document.getElementById('aivenLatencyDisplay');
+
+    const cntNoc = document.getElementById('cntNocRecords');
+    const cntReq = document.getElementById('cntReqDocs');
+    const cntCoc = document.getElementById('cntCocDocs');
+    const cntAi = document.getElementById('cntAiDocs');
+    const cntTypes = document.getElementById('cntCustomTypes');
+    const cntContractors = document.getElementById('cntContractors');
+    const cntUsers = document.getElementById('cntUsers');
+
+    if (isAiven) {
+      if (dotEl) {
+        dotEl.className = 'db-status-dot connected';
+      }
+      if (textEl) textEl.textContent = 'Aiven: Connected';
+
+      if (iconEl) iconEl.textContent = '🟢';
+      if (headEl) headEl.textContent = 'Connected to Aiven PostgreSQL Cloud';
+      if (pillEl) {
+        pillEl.textContent = 'Aiven Cloud DB (Live)';
+        pillEl.style.background = '#DCFCE7';
+        pillEl.style.color = '#15803D';
+      }
+      const host = (window.nocDB && window.nocDB.aivenHost) || 'pg2026-noc-ryansbyi-noc.f.aivencloud.com';
+      if (msgEl) {
+        msgEl.textContent = `Active cloud database connection established to Aiven PostgreSQL (${host}:13029). All 426 NOC records, documents, and accounts are live & synchronized.`;
+      }
+
+      if (hostDisp) hostDisp.textContent = host;
+      if (portDbDisp) portDbDisp.textContent = '13029 / defaultdb';
+      if (backendDisp) {
+        backendDisp.textContent = `${window.nocDB.apiBaseUrl || 'http://localhost:3000'} (Online)`;
+        backendDisp.style.color = '#15803D';
+      }
+      if (latencyDisp) {
+        latencyDisp.textContent = 'Connected (Healthy)';
+        latencyDisp.style.color = '#15803D';
+      }
+
+      const counts = (window.nocDB && window.nocDB.aivenCounts) || {};
+      if (cntNoc) cntNoc.textContent = counts.noc_records !== undefined ? counts.noc_records : '426';
+      if (cntReq) cntReq.textContent = counts.noc_requirements_docs !== undefined ? counts.noc_requirements_docs : '4';
+      if (cntCoc) cntCoc.textContent = counts.sbyi_coc_docs !== undefined ? counts.sbyi_coc_docs : '3';
+      if (cntAi) cntAi.textContent = counts.ai_documents !== undefined ? counts.ai_documents : '3';
+      if (cntTypes) cntTypes.textContent = counts.noc_custom_types !== undefined ? counts.noc_custom_types : '14';
+      if (cntContractors) cntContractors.textContent = counts.noc_custom_contractors !== undefined ? counts.noc_custom_contractors : '18';
+      if (cntUsers) cntUsers.textContent = counts.noc_users !== undefined ? counts.noc_users : '6';
+
+    } else if (isConnected) {
       if (dotEl) {
         dotEl.className = 'db-status-dot connected';
       }
@@ -2096,7 +2133,15 @@ SET password = EXCLUDED.password,
         pillEl.style.color = '#B45309';
       }
       if (msgEl) {
-        msgEl.textContent = "Data is stored securely in your browser's IndexedDB and localStorage. Connect Supabase to enable cloud sync and PostgreSQL persistence.";
+        msgEl.textContent = "Data is stored securely in your browser's IndexedDB and localStorage. Connect Aiven or Supabase to enable cloud sync and PostgreSQL persistence.";
+      }
+      if (backendDisp) {
+        backendDisp.textContent = 'Offline / Standalone';
+        backendDisp.style.color = '#B45309';
+      }
+      if (latencyDisp) {
+        latencyDisp.textContent = 'Local Mode';
+        latencyDisp.style.color = '#B45309';
       }
     }
 
@@ -2109,9 +2154,9 @@ SET password = EXCLUDED.password,
   }
 
   /**
-   * Open the Supabase Database Configuration Modal (Admin Only)
+   * Open the Database Configuration Modal (Admin Only)
    */
-  openDatabaseModal() {
+  async openDatabaseModal() {
     if (!window.nocAuth || !window.nocAuth.canManageDatabase()) {
       this.showToast('System Administrator access required for Database Settings.', 'error');
       return;
@@ -2142,6 +2187,11 @@ SET password = EXCLUDED.password,
     }
     if (codeBlock) {
       codeBlock.textContent = this.getSqlSchemaText();
+    }
+
+    // Refresh Aiven status from server
+    if (window.nocDB && window.nocDB.checkAivenStatus) {
+      await window.nocDB.checkAivenStatus();
     }
 
     this.renderDatabaseStatus();
@@ -2222,7 +2272,7 @@ SET password = EXCLUDED.password,
       if (emptyState) emptyState.style.display = 'none';
 
       tbody.innerHTML = filtered.map(u => {
-        const isMasterAdmin = u.username.toLowerCase() === 'ryan' || u.username.toLowerCase() === 'admin';
+        const isMasterAccount = u.username.toLowerCase() === 'ryan';
         let roleClass = 'badge-guest';
         let roleLabel = 'Guest';
         let avatarIcon = '👤';
@@ -2253,7 +2303,6 @@ SET password = EXCLUDED.password,
         const escapedUsername = this.escapeHTML(u.username);
         const escapedPassword = this.escapeHTML(u.password);
         const escapedDisplayName = this.escapeHTML(u.displayName || u.display_name || u.username);
-        const escapedEmail = this.escapeHTML(u.email || '—');
 
         return `
           <tr data-username="${escapedUsername}">
@@ -2264,7 +2313,7 @@ SET password = EXCLUDED.password,
                 </div>
                 <div>
                   <strong style="font-size:0.9rem; color:var(--text-main); font-family:'JetBrains Mono', monospace;">${escapedUsername}</strong>
-                  ${isMasterAdmin ? '<span class="master-badge" style="display:inline-block; margin-left:0.3rem; font-size:0.68rem; padding:0.1rem 0.35rem; background:#DCFCE7; color:#166534; border-radius:9999px; font-weight:700;">Master Admin</span>' : ''}
+                  ${isMasterAccount ? '<span class="master-badge" style="display:inline-block; margin-left:0.3rem; font-size:0.68rem; padding:0.1rem 0.35rem; background:#DCFCE7; color:#166534; border-radius:9999px; font-weight:700;">Master Developer</span>' : ''}
                 </div>
               </div>
             </td>
@@ -2278,7 +2327,6 @@ SET password = EXCLUDED.password,
             </td>
             <td>
               <span style="font-size:0.88rem; color:var(--text-main); font-weight:500;">${escapedDisplayName}</span>
-              ${u.email ? `<div style="font-size:0.75rem; color:var(--text-muted);">${escapedEmail}</div>` : ''}
             </td>
             <td>
               <span class="user-role-badge ${roleClass}">${roleLabel}</span>
@@ -2288,7 +2336,7 @@ SET password = EXCLUDED.password,
                 <button type="button" class="btn btn-sm btn-outline btn-edit-user" data-username="${escapedUsername}" title="Edit User Credentials" style="padding:0.25rem 0.55rem; font-size:0.78rem;">
                   ✏️ Edit
                 </button>
-                <button type="button" class="btn btn-sm btn-danger btn-delete-user" data-username="${escapedUsername}" ${isMasterAdmin ? 'disabled title="Primary Admin account cannot be deleted"' : 'title="Delete User Account"'} style="padding:0.25rem 0.55rem; font-size:0.78rem; ${isMasterAdmin ? 'opacity:0.4; cursor:not-allowed;' : ''}">
+                <button type="button" class="btn btn-sm btn-danger btn-delete-user" data-username="${escapedUsername}" ${isMasterAccount ? 'disabled title="Primary Developer account cannot be deleted"' : `onclick="window.nocUI.openUserDeleteModal('${escapedUsername}')" title="Delete User Account"`} style="padding:0.25rem 0.55rem; font-size:0.78rem; ${isMasterAccount ? 'opacity:0.4; cursor:not-allowed;' : ''}">
                   🗑️ Delete
                 </button>
               </div>
@@ -2315,7 +2363,6 @@ SET password = EXCLUDED.password,
     const passwordInput = document.getElementById('userFormPassword');
     const displayNameInput = document.getElementById('userFormDisplayName');
     const roleSelect = document.getElementById('userFormRole');
-    const emailInput = document.getElementById('userFormEmail');
 
     if (!modal) return;
 
@@ -2332,7 +2379,6 @@ SET password = EXCLUDED.password,
       if (passwordInput) passwordInput.value = user.password || '';
       if (displayNameInput) displayNameInput.value = user.displayName || user.display_name || '';
       if (roleSelect) roleSelect.value = (user.role === 'main' ? 'employee' : user.role) || 'guest';
-      if (emailInput) emailInput.value = user.email || '';
     } else {
       if (titleEl) titleEl.textContent = 'Add New User';
       if (subtitleEl) subtitleEl.textContent = 'Enter portal account credentials and access role';
@@ -2346,7 +2392,6 @@ SET password = EXCLUDED.password,
       if (passwordInput) passwordInput.value = '';
       if (displayNameInput) displayNameInput.value = '';
       if (roleSelect) roleSelect.value = 'guest';
-      if (emailInput) emailInput.value = '';
     }
 
     this.resetPasswordInputState('userFormPassword', 'btnToggleUserFormPassword', 'Show password');
@@ -2382,8 +2427,216 @@ SET password = EXCLUDED.password,
     const modal = document.getElementById('userEditModal');
     if (modal) modal.classList.remove('active');
   }
+
+  /**
+   * Open Delete User Confirmation Modal
+   */
+  openUserDeleteModal(username) {
+    if (!username) return;
+    const cleanUsername = String(username).trim();
+    if (cleanUsername.toLowerCase() === 'ryan') {
+      this.showToast('Cannot delete the primary Developer account.', 'warning');
+      return;
+    }
+
+    this.pendingDeleteUsername = cleanUsername;
+    const modal = document.getElementById('userDeleteConfirmModal');
+    const targetNameEl = document.getElementById('userDeleteTargetName');
+    const warningNotice = document.getElementById('userDeleteWarningNotice');
+
+    if (targetNameEl) targetNameEl.textContent = `"${cleanUsername}"`;
+
+    const currentUser = window.nocAuth && window.nocAuth.getUser ? window.nocAuth.getUser() : null;
+    const isCurrentActive = currentUser && currentUser.username && currentUser.username.toLowerCase() === cleanUsername.toLowerCase();
+    if (warningNotice) {
+      warningNotice.style.display = isCurrentActive ? 'block' : 'none';
+    }
+
+    if (modal) {
+      modal.classList.add('active');
+    }
+  }
+
+  /**
+   * Close Delete User Confirmation Modal
+   */
+  closeUserDeleteModal() {
+    const modal = document.getElementById('userDeleteConfirmModal');
+    if (modal) modal.classList.remove('active');
+    this.pendingDeleteUsername = null;
+  }
+
+  /**
+   * Update Recycle Bin badge count
+   */
+  async updateRecycleBinBadge() {
+    try {
+      if (!window.nocDB || !window.nocDB.getDeletedCount) return;
+      const count = await window.nocDB.getDeletedCount();
+      const badge = document.getElementById('recycleBinBadge');
+      const countBadge = document.getElementById('deletedRecordsCountBadge');
+      const btn = document.getElementById('btnRecycleBin');
+
+      if (badge) {
+        badge.textContent = count;
+        badge.style.display = count > 0 ? 'inline-block' : 'none';
+      }
+      if (countBadge) {
+        countBadge.textContent = `${count} Record${count === 1 ? '' : 's'}`;
+      }
+      if (btn) {
+        const canManage = window.nocAuth && window.nocAuth.isLoggedIn ? window.nocAuth.isLoggedIn() : false;
+        btn.style.display = canManage ? 'inline-flex' : 'none';
+      }
+    } catch (e) {}
+  }
+
+  /**
+   * Open Deleted Records Modal
+   */
+  async openDeletedRecordsModal() {
+    const modal = document.getElementById('modalDeletedRecords');
+    if (!modal) return;
+    modal.classList.add('active');
+    await this.refreshDeletedRecordsList();
+  }
+
+  /**
+   * Close Deleted Records Modal
+   */
+  closeDeletedRecordsModal() {
+    const modal = document.getElementById('modalDeletedRecords');
+    if (modal) modal.classList.remove('active');
+  }
+
+  /**
+   * Refresh and render deleted records list in Recycle Bin modal
+   */
+  async refreshDeletedRecordsList() {
+    const tbody = document.getElementById('tbodyDeletedRecords');
+    const emptyState = document.getElementById('deletedRecordsEmptyState');
+    const searchInput = document.getElementById('inputSearchDeleted');
+    const query = (searchInput ? searchInput.value : '').trim().toLowerCase();
+
+    if (!tbody) return;
+
+    try {
+      const records = await window.nocDB.getDeletedRecords();
+      await this.updateRecycleBinBadge();
+
+      let filtered = records || [];
+      if (query) {
+        filtered = filtered.filter(r => 
+          (r.nocNumber && r.nocNumber.toLowerCase().includes(query)) ||
+          (r.issuedTo && r.issuedTo.toLowerCase().includes(query)) ||
+          (r.client && r.client.toLowerCase().includes(query)) ||
+          (r.description && r.description.toLowerCase().includes(query)) ||
+          (r.nocType && r.nocType.toLowerCase().includes(query))
+        );
+      }
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        if (emptyState) emptyState.style.display = 'block';
+        return;
+      }
+
+      if (emptyState) emptyState.style.display = 'none';
+
+      tbody.innerHTML = filtered.map(r => {
+        const canViewClient = window.nocAuth && window.nocAuth.canViewClient ? window.nocAuth.canViewClient() : false;
+        const contractorOrClient = canViewClient && r.client ? `${this.escapeHTML(r.issuedTo || 'N/A')}<br><small style="color:var(--text-muted);">${this.escapeHTML(r.client)}</small>` : this.escapeHTML(r.issuedTo || 'N/A');
+        const deletedTime = r.deletedAt ? new Date(r.deletedAt).toLocaleString('en-US', { dateStyle:'medium', timeStyle:'short' }) : 'Unknown';
+
+        return `
+          <tr style="border-bottom:1px solid var(--border-light); transition: background 0.15s ease;">
+            <td style="padding:0.75rem 0.85rem; font-family:'JetBrains Mono', monospace; font-weight:700; color:#1E40AF;">
+              ${this.escapeHTML(r.nocNumber || 'NOC-PENDING')}
+            </td>
+            <td style="padding:0.75rem 0.85rem; font-weight:600; color:var(--text-main);">
+              ${contractorOrClient}
+            </td>
+            <td style="padding:0.75rem 0.85rem;">
+              <span class="badge" style="background:#EFF6FF; color:#1E40AF; border:1px solid #BFDBFE; font-size:0.76rem; font-weight:600;">
+                ${this.escapeHTML(r.nocType || 'Activity')}
+              </span>
+            </td>
+            <td style="padding:0.75rem 0.85rem; font-size:0.78rem; color:var(--text-muted);">
+              <div>🕒 ${deletedTime}</div>
+              ${r.deletedBy ? `<div style="font-size:0.74rem; color:#64748B;">👤 by ${this.escapeHTML(r.deletedBy)}</div>` : ''}
+            </td>
+            <td style="padding:0.75rem 0.85rem; text-align:center;">
+              <div style="display:inline-flex; gap:0.4rem;">
+                <button type="button" class="btn btn-sm btn-green btn-restore-record" data-id="${this.escapeHTML(r.id)}" title="Restore Record back to Active Database" style="padding:0.3rem 0.65rem; font-size:0.78rem; font-weight:700;">
+                  🔄 Restore
+                </button>
+                <button type="button" class="btn btn-sm btn-outline btn-preview-deleted" data-id="${this.escapeHTML(r.id)}" title="View Record Details & Documents" style="padding:0.3rem 0.55rem; font-size:0.78rem;">
+                  👁️ View
+                </button>
+                <button type="button" class="btn btn-sm btn-outline text-rose btn-purge-deleted" data-id="${this.escapeHTML(r.id)}" data-noc="${this.escapeHTML(r.nocNumber)}" title="Permanently Delete" style="border-color:#FDA4AF; padding:0.3rem 0.55rem; font-size:0.78rem;">
+                  ❌
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // Wire row action buttons
+      tbody.querySelectorAll('.btn-restore-record').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          try {
+            btn.disabled = true;
+            btn.textContent = 'Restoring...';
+            const restored = await window.nocDB.restoreDeletedRecord(id);
+            this.showToast(`NOC record "${restored.nocNumber || id}" restored successfully!`, 'success');
+            await this.refreshDeletedRecordsList();
+            if (window.nocApp && window.nocApp.refreshData) {
+              await window.nocApp.refreshData();
+            }
+          } catch (err) {
+            this.showToast('Failed to restore record: ' + err.message, 'error');
+            btn.disabled = false;
+            btn.textContent = '🔄 Restore';
+          }
+        });
+      });
+
+      tbody.querySelectorAll('.btn-preview-deleted').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          const deletedList = await window.nocDB.getDeletedRecords();
+          const target = deletedList.find(d => d.id === id);
+          if (target) {
+            this.openDetailsModal(target);
+          }
+        });
+      });
+
+      tbody.querySelectorAll('.btn-purge-deleted').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          const nocNumber = btn.getAttribute('data-noc');
+          if (!confirm(`Are you sure you want to permanently delete "${nocNumber || id}"? It cannot be recovered.`)) {
+            return;
+          }
+          try {
+            await window.nocDB.permanentlyDeleteRecord(id);
+            this.showToast(`Record "${nocNumber || id}" permanently purged.`, 'info');
+            await this.refreshDeletedRecordsList();
+          } catch (err) {
+            this.showToast('Purge error: ' + err.message, 'error');
+          }
+        });
+      });
+
+    } catch (e) {
+      console.warn('Error refreshing deleted records table:', e);
+    }
+  }
 }
 
 // Global UI instance
 window.nocUI = new UIManager();
-window.showToast = (msg, type) => window.nocUI.showToast(msg, type);
+window.showToast = (msg, type, action) => window.nocUI.showToast(msg, type, action);

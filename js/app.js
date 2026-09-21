@@ -96,6 +96,9 @@ class NOCApp {
       window.nocUI.renderStats(stats);
       this.applyFilters();
       this.populateTypeFilterOptions();
+      if (window.nocUI && window.nocUI.updateRecycleBinBadge) {
+        window.nocUI.updateRecycleBinBadge().catch(() => {});
+      }
     } catch (err) {
       console.error('Error fetching data from database:', err);
       window.showToast('Failed to load records from database.', 'error');
@@ -108,7 +111,19 @@ class NOCApp {
   getAvailableNocTypes() {
     const defaultTypes = [
       'Activity',
-      'Activity NOC'
+      'Activity NOC',
+      'Berthing NOC',
+      'Construction Camp Site Approval',
+      'Construction Camp Size & Location Approval',
+      'Construction NOC',
+      'Design and Build NOC',
+      'Maintenance Activity',
+      'Maintenance NOC',
+      'Marine Survey NOC',
+      'O&M NOC',
+      'Operation & Maintenance NOC',
+      'Site Visit & Meeting',
+      'Temporary Occupancy Certificate'
     ];
     let customTypes = [];
     try {
@@ -330,6 +345,7 @@ class NOCApp {
       'FUGRO SURVEY MIDDLE EAST (FSME)',
       'G4S SECURE SOLUTIONS L.L.C. (G4S)',
       'GSP POWER EQUIPMENT TRADING LLC (GSP)',
+      'GULF DUNES LANDSCAPING & AGRICULTURAL SERVICES, AN ESG COMPANY (GDL)',
       'GULF DUNES LANDSCAPING & AGRICULTURAL SERVICES',
       'GULF INDUSTRIAL SERVICES COMPANY L.L.C (GISCO)',
       'GULF SURVEY',
@@ -361,6 +377,7 @@ class NOCApp {
       'MUNAWALA GROUND SERVICES',
       'NAFTCO ELECTROMECHANICAL LLC (NAFTCO)',
       'NATIONAL MARINE DREDGING COMPANY (NMDC)',
+      'NETKOM COMMUNICATIONS TECHNOLOGY LLC (NCT)',
       'NETCOM COMMUNICATIONS TECHNOLOGY LLC (NCT)',
       'NOFIM GENERAL CONTRACTING (NGC)',
       'OASIS COILS & COATINGS L.L.C. (OCC)',
@@ -740,11 +757,23 @@ class NOCApp {
     if (btnConfirmDelete) {
       btnConfirmDelete.addEventListener('click', async () => {
         if (window.nocUI.pendingDeleteId) {
+          const deletedId = window.nocUI.pendingDeleteId;
           try {
-            await window.nocDB.delete(window.nocUI.pendingDeleteId);
-            window.showToast('NOC Record deleted successfully.', 'success');
+            await window.nocDB.delete(deletedId);
             window.nocUI.closeDeleteModal();
             await this.refreshData();
+            window.showToast('NOC Record moved to Recycle Bin.', 'info', {
+              label: '↩️ Undo',
+              onClick: async () => {
+                try {
+                  const restored = await window.nocDB.restoreDeletedRecord(deletedId);
+                  await this.refreshData();
+                  window.showToast(`Restored "${restored.nocNumber || deletedId}"!`, 'success');
+                } catch (e) {
+                  window.showToast('Undo failed: ' + e.message, 'error');
+                }
+              }
+            });
           } catch (err) {
             window.showToast('Failed to delete record: ' + err.message, 'error');
           }
@@ -1526,11 +1555,98 @@ class NOCApp {
     }
 
     // ========================================================================
-    // Supabase / PostgreSQL Database Modal Events
+    // Deleted Records (Recycle Bin) Modal Events
+    // ========================================================================
+    const btnRecycleBin = document.getElementById('btnRecycleBin');
+    const btnCloseDeletedRecordsModal = document.getElementById('btnCloseDeletedRecordsModal');
+    const btnCloseDeletedRecordsModalFooter = document.getElementById('btnCloseDeletedRecordsModalFooter');
+    const btnRestoreAllDeleted = document.getElementById('btnRestoreAllDeleted');
+    const btnClearRecycleBin = document.getElementById('btnClearRecycleBin');
+    const inputSearchDeleted = document.getElementById('inputSearchDeleted');
+
+    if (btnRecycleBin) {
+      btnRecycleBin.addEventListener('click', () => {
+        window.nocUI.openDeletedRecordsModal();
+      });
+    }
+
+    if (btnCloseDeletedRecordsModal) {
+      btnCloseDeletedRecordsModal.addEventListener('click', () => {
+        window.nocUI.closeDeletedRecordsModal();
+      });
+    }
+
+    if (btnCloseDeletedRecordsModalFooter) {
+      btnCloseDeletedRecordsModalFooter.addEventListener('click', () => {
+        window.nocUI.closeDeletedRecordsModal();
+      });
+    }
+
+    if (inputSearchDeleted) {
+      inputSearchDeleted.addEventListener('input', () => {
+        window.nocUI.refreshDeletedRecordsList();
+      });
+    }
+
+    if (btnRestoreAllDeleted) {
+      btnRestoreAllDeleted.addEventListener('click', async () => {
+        const count = await window.nocDB.getDeletedCount();
+        if (count === 0) {
+          window.showToast('Recycle Bin is already empty.', 'info');
+          return;
+        }
+        if (!confirm(`Restore all ${count} deleted records back into the active database?`)) {
+          return;
+        }
+        btnRestoreAllDeleted.disabled = true;
+        btnRestoreAllDeleted.textContent = 'Restoring...';
+        try {
+          const restoredCount = await window.nocDB.restoreAllDeletedRecords();
+          window.showToast(`Successfully restored ${restoredCount} NOC records!`, 'success');
+          await window.nocUI.refreshDeletedRecordsList();
+          await this.refreshData();
+        } catch (e) {
+          window.showToast('Failed to restore all: ' + e.message, 'error');
+        } finally {
+          btnRestoreAllDeleted.disabled = false;
+          btnRestoreAllDeleted.textContent = '🔄 Restore All Records';
+        }
+      });
+    }
+
+    if (btnClearRecycleBin) {
+      btnClearRecycleBin.addEventListener('click', async () => {
+        const count = await window.nocDB.getDeletedCount();
+        if (count === 0) {
+          window.showToast('Recycle Bin is already empty.', 'info');
+          return;
+        }
+        if (!confirm(`Permanently empty Recycle Bin? All ${count} archived records will be permanently removed.`)) {
+          return;
+        }
+        try {
+          await window.nocDB.clearDeletedRecords();
+          window.showToast('Recycle Bin emptied.', 'info');
+          await window.nocUI.refreshDeletedRecordsList();
+        } catch (e) {
+          window.showToast('Error emptying Recycle Bin: ' + e.message, 'error');
+        }
+      });
+    }
+
+    // ========================================================================
+    // Aiven Cloud & PostgreSQL Database Modal Events
     // ========================================================================
     const btnDatabaseConfig = document.getElementById('btnDatabaseConfig');
     const btnCloseDatabaseModal = document.getElementById('btnCloseDatabaseModal');
     const btnCloseDatabaseModalFooter = document.getElementById('btnCloseDatabaseModalFooter');
+    
+    // Aiven Cloud action buttons
+    const btnTestAivenConnection = document.getElementById('btnTestAivenConnection');
+    const btnSyncToAiven = document.getElementById('btnSyncToAiven');
+    const btnRefreshFromAiven = document.getElementById('btnRefreshFromAiven');
+
+    // Supabase & restore controls
     const btnSaveSupabaseConfig = document.getElementById('btnSaveSupabaseConfig');
     const btnTestSupabaseConnection = document.getElementById('btnTestSupabaseConnection');
     const btnClearSupabaseConfig = document.getElementById('btnClearSupabaseConfig');
@@ -1557,6 +1673,74 @@ class NOCApp {
     if (btnCloseDatabaseModalFooter) {
       btnCloseDatabaseModalFooter.addEventListener('click', () => {
         window.nocUI.closeDatabaseModal();
+      });
+    }
+
+    // 1. Test Aiven Cloud Database Connection
+    if (btnTestAivenConnection) {
+      btnTestAivenConnection.addEventListener('click', async () => {
+        btnTestAivenConnection.disabled = true;
+        btnTestAivenConnection.textContent = 'Testing...';
+        try {
+          const res = await window.nocDB.testAivenConnection();
+          if (res.success) {
+            window.showToast(`Connected to Aiven PostgreSQL Server! Latency: ${res.latencyMs}ms (${res.host}) ⚡`, 'success');
+            window.nocUI.renderDatabaseStatus();
+          } else {
+            window.showToast(res.message || 'Failed to connect to Aiven server.', 'error');
+          }
+        } catch (e) {
+          window.showToast('Test error: ' + e.message, 'error');
+        } finally {
+          btnTestAivenConnection.disabled = false;
+          btnTestAivenConnection.textContent = '🔌 Test Aiven Connection';
+        }
+      });
+    }
+
+    // 2. 1-Click Sync to Aiven Cloud Database
+    if (btnSyncToAiven) {
+      btnSyncToAiven.addEventListener('click', async () => {
+        btnSyncToAiven.disabled = true;
+        btnSyncToAiven.textContent = '⚡ Preparing Sync...';
+        try {
+          const res = await window.nocDB.syncLocalToAiven((prog) => {
+            if (prog && prog.stage === 'records') {
+              btnSyncToAiven.textContent = `⚡ Syncing (${prog.current}/${prog.total})...`;
+            }
+          });
+          if (res.success) {
+            window.showToast(res.message || 'All NOC records with PDF attachments synchronized to Aiven PostgreSQL Cloud! ⚡', 'success');
+            await this.refreshData();
+            window.nocUI.renderDatabaseStatus();
+          } else {
+            window.showToast(res.message || 'Aiven sync failed.', 'error');
+          }
+        } catch (e) {
+          window.showToast('Sync error: ' + e.message, 'error');
+        } finally {
+          btnSyncToAiven.disabled = false;
+          btnSyncToAiven.textContent = '⚡ 1-Click Sync to Aiven';
+        }
+      });
+    }
+
+    // 3. Refresh Data from Aiven Cloud Database
+    if (btnRefreshFromAiven) {
+      btnRefreshFromAiven.addEventListener('click', async () => {
+        btnRefreshFromAiven.disabled = true;
+        btnRefreshFromAiven.textContent = '🔄 Refreshing...';
+        try {
+          await window.nocDB.checkAivenStatus(true);
+          await this.refreshData();
+          window.nocUI.renderDatabaseStatus();
+          window.showToast('Refreshed data from Aiven Cloud successfully! 🔄', 'success');
+        } catch (e) {
+          window.showToast('Refresh error: ' + e.message, 'error');
+        } finally {
+          btnRefreshFromAiven.disabled = false;
+          btnRefreshFromAiven.textContent = '🔄 Refresh from Aiven';
+        }
       });
     }
 
@@ -1829,23 +2013,61 @@ class NOCApp {
         const deleteBtn = target.closest('.btn-delete-user');
         if (deleteBtn) {
           const username = deleteBtn.getAttribute('data-username');
-          if (username.toLowerCase() === 'admin' || username.toLowerCase() === 'ryan') {
-            window.showToast('Cannot delete the primary Developer account.', 'warning');
-            return;
-          }
-
-          if (confirm(`Are you sure you want to permanently delete user account "${username}"?`)) {
-            try {
-              await window.nocDB.deleteUser(username);
-              const isDb = window.nocDB.isSupabaseActive();
-              window.showToast(`User account "${username}" deleted successfully${isDb ? ' (Synced with Supabase)' : ''}.`, 'success');
-              const searchVal = document.getElementById('userDbSearchInput')?.value || '';
-              await window.nocUI.refreshUserDatabaseView(searchVal);
-            } catch (err) {
-              window.showToast('Failed to delete user: ' + err.message, 'error');
-            }
+          if (username) {
+            window.nocUI.openUserDeleteModal(username);
           }
           return;
+        }
+      });
+    }
+
+    // 8. Delete User Confirmation Modal Handlers
+    const btnCloseUserDeleteModal = document.getElementById('btnCloseUserDeleteModal');
+    const btnCancelUserDelete = document.getElementById('btnCancelUserDelete');
+    const btnConfirmUserDelete = document.getElementById('btnConfirmUserDelete');
+
+    if (btnCloseUserDeleteModal) {
+      btnCloseUserDeleteModal.addEventListener('click', () => {
+        window.nocUI.closeUserDeleteModal();
+      });
+    }
+    if (btnCancelUserDelete) {
+      btnCancelUserDelete.addEventListener('click', () => {
+        window.nocUI.closeUserDeleteModal();
+      });
+    }
+    if (btnConfirmUserDelete) {
+      btnConfirmUserDelete.addEventListener('click', async () => {
+        const username = window.nocUI.pendingDeleteUsername;
+        if (!username) {
+          window.nocUI.closeUserDeleteModal();
+          return;
+        }
+
+        try {
+          btnConfirmUserDelete.disabled = true;
+          btnConfirmUserDelete.innerHTML = '<span>⏳</span><span>Deleting...</span>';
+
+          await window.nocDB.deleteUser(username);
+          const isDb = window.nocDB.isSupabaseActive();
+          window.showToast(`User account "${username}" deleted successfully${isDb ? ' (Synced with Supabase)' : ''}.`, 'success');
+          
+          window.nocUI.closeUserDeleteModal();
+          const searchVal = document.getElementById('userDbSearchInput')?.value || '';
+          await window.nocUI.refreshUserDatabaseView(searchVal);
+
+          const currentUser = window.nocAuth && window.nocAuth.getUser ? window.nocAuth.getUser() : null;
+          if (currentUser && currentUser.username && currentUser.username.toLowerCase() === username.toLowerCase()) {
+            window.showToast('You deleted your active account session. Signing out...', 'info');
+            setTimeout(() => {
+              window.nocAuth.logout();
+            }, 1000);
+          }
+        } catch (err) {
+          window.showToast('Failed to delete user: ' + err.message, 'error');
+        } finally {
+          btnConfirmUserDelete.disabled = false;
+          btnConfirmUserDelete.innerHTML = '<span>🗑️</span><span>Confirm Delete</span>';
         }
       });
     }
@@ -1860,7 +2082,6 @@ class NOCApp {
         const password = (document.getElementById('userFormPassword')?.value || '').trim();
         const displayName = (document.getElementById('userFormDisplayName')?.value || '').trim();
         const role = (document.getElementById('userFormRole')?.value || 'guest').trim();
-        const email = (document.getElementById('userFormEmail')?.value || '').trim();
 
         if (!username || !password) {
           window.showToast('Username and Password are required.', 'error');
@@ -1878,6 +2099,8 @@ class NOCApp {
         }
 
         const users = await window.nocDB.getUsers();
+        const existingUser = isEditMode ? users.find(u => u.username.toLowerCase() === origUsername.toLowerCase()) : null;
+        const email = existingUser ? (existingUser.email || '') : '';
 
         // Check username uniqueness
         if (!isEditMode) {

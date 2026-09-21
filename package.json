@@ -1,0 +1,25 @@
+{
+  "name": "noc-web-backend",
+  "version": "1.0.0",
+  "description": "NOC Web Application Backend with Node.js and Express",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "migrate": "node database/migrate_to_aiven.js"
+  },
+  "keywords": [
+    "noc",
+    "express",
+    "postgresql",
+    "aiven"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pg": "^8.13.3"
+  }
+}
