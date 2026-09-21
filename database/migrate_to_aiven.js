@@ -22,10 +22,18 @@ if (!process.env.DATABASE_URL) {
 }
 
 const dbUrl = new URL(process.env.DATABASE_URL);
-const cleanConnString = `${dbUrl.protocol}//${dbUrl.username}:${dbUrl.password}@${dbUrl.host}${dbUrl.pathname}`;
+const dbHost = dbUrl.hostname || 'pg2026-noc-ryansbyi-noc.f.aivencloud.com';
+const dbPort = parseInt(dbUrl.port, 10) || 13029;
+const dbUser = decodeURIComponent(dbUrl.username || 'avnadmin');
+const dbPass = decodeURIComponent(dbUrl.password || '');
+const dbName = (dbUrl.pathname || '/defaultdb').replace(/^\//, '') || 'defaultdb';
 
 const pool = new Pool({
-  connectionString: cleanConnString,
+  host: dbHost,
+  port: dbPort,
+  user: dbUser,
+  password: dbPass,
+  database: dbName,
   ssl: {
     ca: fs.readFileSync(caCertPath, 'utf-8'),
     rejectUnauthorized: false

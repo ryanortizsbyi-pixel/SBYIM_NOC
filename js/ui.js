@@ -2492,14 +2492,16 @@ SET password = EXCLUDED.password,
       codeBlock.textContent = this.getSqlSchemaText();
     }
 
-    // Refresh Aiven status from server
-    if (window.nocDB && window.nocDB.checkAivenStatus) {
-      await window.nocDB.checkAivenStatus();
-    }
-
     this.renderDatabaseStatus();
     this.resetPasswordInputState('inputSupabaseKey', 'btnToggleSupabaseKey', 'Show API key');
     if (modal) modal.classList.add('active');
+
+    // Live refresh Aiven status from server in background
+    if (window.nocDB && window.nocDB.checkAivenStatus) {
+      window.nocDB.checkAivenStatus(true).then(() => {
+        this.renderDatabaseStatus();
+      }).catch(() => {});
+    }
   }
 
   /**

@@ -78,23 +78,7 @@ class NOCDatabase {
     this.isAivenConnecting = true;
     const candidates = [];
 
-    // 1. Cached last working API base URL
-    try {
-      const cachedActive = localStorage.getItem('noc_active_api_url');
-      if (cachedActive && !candidates.includes(cachedActive)) {
-        candidates.push(cachedActive);
-      }
-    } catch (e) {}
-
-    // 2. Custom API URL if configured
-    try {
-      const customUrl = this.customApiUrl || localStorage.getItem('noc_custom_api_url');
-      if (customUrl && !candidates.includes(customUrl)) {
-        candidates.push(customUrl);
-      }
-    } catch (e) {}
-
-    // 3. Localhost Node.js backend server (port 3000)
+    // 1. Localhost Node.js backend server (port 3000 & 127.0.0.1)
     if (!candidates.includes('http://localhost:3000')) {
       candidates.push('http://localhost:3000');
     }
@@ -102,8 +86,24 @@ class NOCDatabase {
       candidates.push('http://127.0.0.1:3000');
     }
 
+    // 2. Cached last working API base URL
+    try {
+      const cachedActive = localStorage.getItem('noc_active_api_url');
+      if (cachedActive && !candidates.includes(cachedActive)) {
+        candidates.unshift(cachedActive);
+      }
+    } catch (e) {}
+
+    // 3. Custom API URL if configured
+    try {
+      const customUrl = this.customApiUrl || localStorage.getItem('noc_custom_api_url');
+      if (customUrl && !candidates.includes(customUrl)) {
+        candidates.push(customUrl);
+      }
+    } catch (e) {}
+
     // 4. Same origin (if running from Express or production web server)
-    if (window.location && window.location.origin && window.location.origin.startsWith('http')) {
+    if (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin.startsWith('http')) {
       if (!candidates.includes('')) {
         candidates.push('');
       }
@@ -114,11 +114,12 @@ class NOCDatabase {
 
     const checkCandidate = async (base) => {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
       try {
         const url = `${base}/api/stats`;
         const res = await fetch(url, {
           cache: 'no-store',
+          headers: { 'Accept': 'application/json' },
           signal: controller.signal
         });
         clearTimeout(timeoutId);
@@ -150,9 +151,9 @@ class NOCDatabase {
         this.aivenDatabase = data.database || 'defaultdb';
         this.aivenPort = data.port || 13029;
 
-        console.log(`NOCDatabase: Connected automatically to Aiven PostgreSQL cloud database (${data.host}) via ${base || 'current origin'}.`);
+        console.log(`NOCDatabase: Connected automatically to Aiven PostgreSQL cloud database (${this.aivenHost}:${this.aivenPort}) via ${base || 'current origin'}.`);
         window.dispatchEvent(new CustomEvent('noc:aiven-status-change', {
-          detail: { isConnected: true, isConnecting: false, host: data.host, counts: data.counts, baseUrl: base }
+          detail: { isConnected: true, isConnecting: false, host: this.aivenHost, port: this.aivenPort, database: this.aivenDatabase, counts: data.counts, baseUrl: base }
         }));
         return true;
       }
@@ -173,7 +174,8 @@ class NOCDatabase {
    */
   startAivenHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    const interval = this.isAivenConnected ? 30000 : 4000;
+    // Fast 2s auto-reconnect interval when disconnected, 15s check when live
+    const interval = this.isAivenConnected ? 15000 : 2000;
     this.heartbeatTimer = setInterval(async () => {
       const wasConnected = this.isAivenConnected;
       const isNowConnected = await this.checkAivenStatus();
@@ -186,8 +188,35 @@ class NOCDatabase {
           window.nocUI.renderDatabaseStatus();
         }
         this.startAivenHeartbeat();
+      } else if (wasConnected && !isNowConnected) {
+        console.warn('NOCDatabase: Aiven Cloud connection lost, entering fast auto-reconnect loop...');
+        if (window.nocUI && window.nocUI.renderDatabaseStatus) {
+          window.nocUI.renderDatabaseStatus();
+        }
+        this.startAivenHeartbeat();
       }
     }, interval);
+
+    // Also auto-reconnect when tab regains focus or network comes online
+    if (!this._hasAttachedFocusListeners && typeof window !== 'undefined') {
+      this._hasAttachedFocusListeners = true;
+      window.addEventListener('focus', () => {
+        if (!this.isAivenConnected) {
+          this.checkAivenStatus().then(connected => {
+            if (connected && window.nocApp && window.nocApp.refreshData) {
+              window.nocApp.refreshData(true).catch(() => {});
+            }
+          });
+        }
+      });
+      window.addEventListener('online', () => {
+        this.checkAivenStatus().then(connected => {
+          if (connected && window.nocApp && window.nocApp.refreshData) {
+            window.nocApp.refreshData(true).catch(() => {});
+          }
+        });
+      });
+    }
   }
 
   /**
@@ -207,9 +236,10 @@ class NOCDatabase {
           return {
             success: true,
             latencyMs,
-            host: this.aivenHost || 'pg2026-noc-ryansbyi-noc.f.aivencloud.com',
-            database: this.aivenDatabase || 'defaultdb',
-            version: body.version || 'PostgreSQL 16 (Aiven Cloud)',
+            host: body.host || this.aivenHost || 'pg2026-noc-ryansbyi-noc.f.aivencloud.com',
+            port: body.port || this.aivenPort || 13029,
+            database: body.database || this.aivenDatabase || 'defaultdb',
+            version: body.version || 'PostgreSQL 18.6 (Aiven Cloud)',
             counts: this.aivenCounts || {}
           };
         }

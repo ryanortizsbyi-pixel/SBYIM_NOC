@@ -61,6 +61,9 @@ class NOCApp {
 
     // Listen for Aiven status change event to auto-refresh data whenever connected
     window.addEventListener('noc:aiven-status-change', async (e) => {
+      if (window.nocUI && window.nocUI.renderDatabaseStatus) {
+        window.nocUI.renderDatabaseStatus();
+      }
       if (e.detail && e.detail.isConnected) {
         console.log('NOCApp: Aiven connected, synchronizing live records and stats...');
         await this.refreshData(true);
@@ -75,12 +78,15 @@ class NOCApp {
       try {
         await Promise.race([
           window.nocDB.initPromise,
-          new Promise(resolve => setTimeout(resolve, 800))
+          new Promise(resolve => setTimeout(resolve, 3000))
         ]);
       } catch (e) {}
     }
 
     await this.refreshData(window.nocDB && window.nocDB.isAivenActive());
+    if (window.nocUI && window.nocUI.renderDatabaseStatus) {
+      window.nocUI.renderDatabaseStatus();
+    }
 
     // 6. Background remote sync
     if (window.nocDB && window.nocDB.initPromise) {
@@ -89,6 +95,9 @@ class NOCApp {
           await window.seedInitialDatabaseIfEmpty();
         }
         await this.refreshData(true);
+        if (window.nocUI && window.nocUI.renderDatabaseStatus) {
+          window.nocUI.renderDatabaseStatus();
+        }
       }).catch(err => console.warn('Background DB sync warning:', err));
     }
 

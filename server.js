@@ -29,21 +29,48 @@ if (!process.env.DATABASE_URL) {
 
 const rawUrl = process.env.DATABASE_URL;
 const dbUrl = new URL(rawUrl);
-console.log('DATABASE_URL loaded successfully');
-console.log('Database host:', dbUrl.hostname);
-console.log('Database port:', dbUrl.port);
+const dbHost = dbUrl.hostname || 'pg2026-noc-ryansbyi-noc.f.aivencloud.com';
+const dbPort = parseInt(dbUrl.port, 10) || 13029;
+const dbUser = decodeURIComponent(dbUrl.username || 'avnadmin');
+const dbPass = decodeURIComponent(dbUrl.password || '');
+const dbName = (dbUrl.pathname || '/defaultdb').replace(/^\//, '') || 'defaultdb';
 
-const cleanConnString = `${dbUrl.protocol}//${dbUrl.username}:${dbUrl.password}@${dbUrl.host}${dbUrl.pathname}`;
+console.log('DATABASE_URL loaded successfully');
+console.log('Database host:', dbHost);
+console.log('Database port:', dbPort);
+console.log('Database name:', dbName);
+
+const caCertPath = path.join(__dirname, 'certs', 'ca.pem');
+const caCert = fs.existsSync(caCertPath) ? fs.readFileSync(caCertPath, 'utf-8') : null;
 
 const pool = new Pool({
-  connectionString: cleanConnString,
-  ssl: fs.existsSync(path.join(__dirname, 'certs', 'ca.pem')) ? {
-    ca: fs.readFileSync(path.join(__dirname, 'certs', 'ca.pem'), 'utf-8'),
+  host: dbHost,
+  port: dbPort,
+  user: dbUser,
+  password: dbPass,
+  database: dbName,
+  ssl: caCert ? {
+    ca: caCert,
     rejectUnauthorized: false
   } : {
     rejectUnauthorized: false
-  }
+  },
+  max: 25,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000
 });
+
+// Periodic TCP Keep-Alive query to maintain active SSL connection with Aiven Cloud
+const aivenKeepAliveInterval = setInterval(async () => {
+  try {
+    await pool.query('SELECT 1');
+  } catch (err) {
+    console.warn('[Aiven Keep-Alive Warning]:', err.message);
+  }
+}, 25000);
+if (aivenKeepAliveInterval.unref) aivenKeepAliveInterval.unref();
 
 // Helper function to log database errors
 function logDatabaseError(contextLabel, error) {
@@ -224,6 +251,24 @@ function mapRecordToDb(rec) {
 // REST API ENDPOINTS
 // ============================================================================
 
+// 0. Super-fast microsecond Health Ping Endpoints
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    success: true,
+    connected: true,
+    host: dbHost,
+    port: dbPort,
+    database: dbName,
+    ssl: true,
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/api/ping', (req, res) => {
+  res.send('pong');
+});
+
 // 1. Health check and connection status
 app.get('/api/db-test', async (req, res) => {
   try {
@@ -231,6 +276,10 @@ app.get('/api/db-test', async (req, res) => {
     res.status(200).json({
       success: true,
       message: 'Aiven database connected successfully',
+      host: dbHost,
+      port: dbPort,
+      database: dbName,
+      ssl: true,
       version: result.rows[0].version
     });
   } catch (error) {
@@ -258,12 +307,19 @@ app.get('/api/stats', async (req, res) => {
     ];
     const counts = {};
     for (const t of tables) {
-      const q = await pool.query(`SELECT count(*) as count FROM public.${t}`);
-      counts[t] = parseInt(q.rows[0].count, 10);
+      try {
+        const q = await pool.query(`SELECT count(*) as count FROM public.${t}`);
+        counts[t] = parseInt(q.rows[0].count, 10);
+      } catch (tableErr) {
+        counts[t] = 0;
+      }
     }
     res.json({
       success: true,
-      host: dbUrl.hostname,
+      host: dbHost,
+      port: dbPort,
+      database: dbName,
+      ssl: true,
       counts
     });
   } catch (err) {
