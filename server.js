@@ -22,26 +22,62 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname)));
 
 // PostgreSQL Connection Pool using Aiven DATABASE_URL with CA certificate
-if (!process.env.DATABASE_URL) {
-  console.error('ERROR: DATABASE_URL was not loaded from .env');
-  process.exit(1);
+const DEFAULT_AIVEN_URL = 'postgres://avnadmin:AVNS_53oqyZFiE6ccpAivNKu@pg2026-noc-ryansbyi-noc.f.aivencloud.com:13029/defaultdb?sslmode=require';
+const rawUrl = process.env.DATABASE_URL || DEFAULT_AIVEN_URL;
+
+let dbUrl;
+try {
+  dbUrl = new URL(rawUrl);
+} catch (e) {
+  dbUrl = new URL(DEFAULT_AIVEN_URL);
 }
 
-const rawUrl = process.env.DATABASE_URL;
-const dbUrl = new URL(rawUrl);
 const dbHost = dbUrl.hostname || 'pg2026-noc-ryansbyi-noc.f.aivencloud.com';
 const dbPort = parseInt(dbUrl.port, 10) || 13029;
 const dbUser = decodeURIComponent(dbUrl.username || 'avnadmin');
 const dbPass = decodeURIComponent(dbUrl.password || '');
 const dbName = (dbUrl.pathname || '/defaultdb').replace(/^\//, '') || 'defaultdb';
 
-console.log('DATABASE_URL loaded successfully');
 console.log('Database host:', dbHost);
 console.log('Database port:', dbPort);
 console.log('Database name:', dbName);
 
+// Load Aiven CA Certificate with embedded fallback for serverless hosting (Vercel)
 const caCertPath = path.join(__dirname, 'certs', 'ca.pem');
-const caCert = fs.existsSync(caCertPath) ? fs.readFileSync(caCertPath, 'utf-8') : null;
+const EMBEDDED_AIVEN_CA = `-----BEGIN CERTIFICATE-----
+MIIERDCCAqygAwIBAgIUTzK4Z0nK/H9refLyVuiT9WMf8C8wDQYJKoZIhvcNAQEM
+BQAwOjE4MDYGA1UEAwwvYTQzYmM2YWEtZjg4Mi00ZWIzLTg5MTAtOGZjNzQzODVj
+MGIwIFByb2plY3QgQ0EwHhcNMjYwOTE3MDYxMTM1WhcNMzYwOTE0MDYxMTM1WjA6
+MTgwNgYDVQQDDC9hNDNiYzZhYS1mODgyLTRlYjMtODkxMC04ZmM3NDM4NWMwYjAg
+UHJvamVjdCBDQTCCAaIwDQYJKoZIhvcNAQEBBQADggGPADCCAYoCggGBANKU0wF6
+0Jv1f5yf0Gki17IBQPfD6/5Oxh2al1WPeXW6HgZ6eTG4dPtPamEcmUMk2y7yDNo6
+MhuIILvgI/bmDE8QDOvldYILnyqQEwJPeMsIIxcyO9q6/PzXb1Ryqd4IBoNL53Ex
+zr6aK0yrLPayr2wXa0ZFgKAlX9Tcs8VsFYtTamZgHurlYzIrZCQK/zr43s3F5mtw
+U1XJZFYn4Nm2hwLUuV0r2atOGiY+KgCoWBmWWrfKMZspib8lq77YMawmNkN9QXLG
+0Lid0Fd2BL/sHi9bg3TYNMMvbm7L72m9oc21sVSyWEnBmifwkgEwFK6A5CWrxgoh
+4nsonwkJEij1Tp7Qrin2C51imvsLk0fXih3J5oId6/sGefVzgoOqW45H+H6hS/Uj
+Rlz+LjR+Z8C1sVR1bv10vvgDoCz9dprz6+fguDwMIGrwrpWR1Ouc/ryrJyAuhZue
+VAk8B3PV8RfHsT07i7QxGoikPTdQiDaSwgTN0SAFYPz/RwAVWsddgey7YwIDAQAB
+o0IwQDAdBgNVHQ4EFgQU1tNr0sDyq/2mzth2bX/4vAN4iNYwEgYDVR0TAQH/BAgw
+BgEB/wIBADALBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQEMBQADggGBABb4mbVjz92c
+CziGUg9i5xlqLcESfBar0lnVKKoPu8b5iqtu5wyh+L/ssVf9FHWyUC4VTs9u4qj+
+vqauRcooQuYaQukdFih1VpWknZQmOlJtt/QHw5c2e0NGP0HiICYC0URVkbya6NTe
+Y3LualLFlEZcB/Jvfd9ZkIN+xMiMQEBw2qMocwU1f5pjVi4MCZCriiWcbhwnYRk7
+vTiv0PYEgoKUzZZ0Gb2KCWmiSqcd+937axWkASx3Ata8xODHoDdS4CPvw0AuTao4
+LQZtKnqoqC12sSGrQdozEXrSKsmU49q6oWhKXftGE3DfNtKOgWrlvYfmaRdA07W1
+LsbuJdP8QQczX3UFmRGSEDabUXL3Nke/CShkbk0E2mDJplxPETK22A9O+f98fMuo
+iNTN48t2PqJi1v2QpC4OYmS7KE30535+mqJZ34rd6bSV41KAYNoi/tNGL1AcOJat
+5PuE01iABQNP4dRc3T1lGDfleXe/fkbDX8RqfJR/rgY0x4Z3KxoNcA==
+-----END CERTIFICATE-----`;
+
+let caCert = EMBEDDED_AIVEN_CA;
+try {
+  if (fs.existsSync(caCertPath)) {
+    caCert = fs.readFileSync(caCertPath, 'utf-8');
+  }
+} catch (e) {
+  caCert = EMBEDDED_AIVEN_CA;
+}
 
 const pool = new Pool({
   host: dbHost,
@@ -49,13 +85,11 @@ const pool = new Pool({
   user: dbUser,
   password: dbPass,
   database: dbName,
-  ssl: caCert ? {
+  ssl: {
     ca: caCert,
     rejectUnauthorized: false
-  } : {
-    rejectUnauthorized: false
   },
-  max: 25,
+  max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
   keepAlive: true,
@@ -1221,12 +1255,16 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Start Express Server
-app.listen(PORT, () => {
-  console.log(`=========================================`);
-  console.log(`🚀 NOC Backend Server running on port ${PORT}`);
-  console.log(`📡 URL: http://localhost:${PORT}`);
-  console.log(`🧪 Test Endpoint: http://localhost:${PORT}/api/db-test`);
-  console.log(`📊 Stats Endpoint: http://localhost:${PORT}/api/stats`);
-  console.log(`=========================================`);
-});
+// Start Express Server when run locally
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`=========================================`);
+    console.log(`🚀 NOC Backend Server running on port ${PORT}`);
+    console.log(`📡 URL: http://localhost:${PORT}`);
+    console.log(`🧪 Test Endpoint: http://localhost:${PORT}/api/db-test`);
+    console.log(`📊 Stats Endpoint: http://localhost:${PORT}/api/stats`);
+    console.log(`=========================================`);
+  });
+}
+
+module.exports = app;
