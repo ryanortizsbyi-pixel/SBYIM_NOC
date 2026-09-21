@@ -879,6 +879,22 @@
             </div>
           </div>
 
+          <!-- Cloud Backend API URL Setting (Automatic / Custom) -->
+          <div style="margin-bottom:1rem; padding:0.75rem 0.85rem; background:#FFFFFF; border:1px solid #DCFCE7; border-radius:var(--radius-sm);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+              <label for="inputAivenApiUrl" style="font-size:0.78rem; font-weight:700; color:#14532D; margin:0;">
+                🌐 Cloud Backend API URL / Domain
+              </label>
+              <span style="font-size:0.72rem; color:var(--text-muted);">Auto-detected on Vercel & localhost</span>
+            </div>
+            <div style="display:flex; gap:0.5rem;">
+              <input type="url" id="inputAivenApiUrl" class="form-control" placeholder="e.g. https://sbyim-noc.vercel.app" style="font-size:0.8rem; padding:0.4rem 0.65rem;" autocomplete="off" spellcheck="false">
+              <button type="button" class="btn btn-sm btn-outline" id="btnSaveAivenApiUrl" style="background:#F0FDF4; border-color:#86EFAC; color:#166534; font-weight:600; font-size:0.78rem; white-space:nowrap;">
+                💾 Save & Connect
+              </button>
+            </div>
+          </div>
+
           <!-- Action Buttons for Aiven -->
           <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:center;">
             <button type="button" class="btn btn-primary" id="btnTestAivenConnection" style="background: linear-gradient(135deg, #10B981, #059669); border-color:#059669;">
