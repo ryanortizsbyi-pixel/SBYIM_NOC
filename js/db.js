@@ -77,20 +77,22 @@ class NOCDatabase {
   async checkAivenStatus(forceTest = false) {
     this.isAivenConnecting = true;
     const candidates = [];
+    const isHttps = typeof window !== 'undefined' && window.location && window.location.protocol === 'https:';
+    const origin = typeof window !== 'undefined' && window.location && window.location.origin ? window.location.origin : '';
 
-    // 1. Localhost Node.js backend server (port 3000 & 127.0.0.1)
-    if (!candidates.includes('http://localhost:3000')) {
-      candidates.push('http://localhost:3000');
-    }
-    if (!candidates.includes('http://127.0.0.1:3000')) {
-      candidates.push('http://127.0.0.1:3000');
+    // 1. Same origin / relative URL (Highest priority for Vercel / Cloud deployments)
+    if (origin && origin.startsWith('http')) {
+      if (!candidates.includes('')) candidates.push('');
+      if (!candidates.includes(origin)) candidates.push(origin);
     }
 
     // 2. Cached last working API base URL
     try {
       const cachedActive = localStorage.getItem('noc_active_api_url');
       if (cachedActive && !candidates.includes(cachedActive)) {
-        candidates.unshift(cachedActive);
+        if (!isHttps || cachedActive.startsWith('https:') || cachedActive === '') {
+          candidates.push(cachedActive);
+        }
       }
     } catch (e) {}
 
@@ -98,17 +100,19 @@ class NOCDatabase {
     try {
       const customUrl = this.customApiUrl || localStorage.getItem('noc_custom_api_url');
       if (customUrl && !candidates.includes(customUrl)) {
-        candidates.push(customUrl);
+        if (!isHttps || customUrl.startsWith('https:')) {
+          candidates.push(customUrl);
+        }
       }
     } catch (e) {}
 
-    // 4. Same origin (if running from Express or production web server)
-    if (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin.startsWith('http')) {
-      if (!candidates.includes('')) {
-        candidates.push('');
+    // 4. Localhost Node.js backend server (only if on HTTP or file:// protocol to avoid Mixed Content)
+    if (!isHttps) {
+      if (!candidates.includes('http://localhost:3000')) {
+        candidates.push('http://localhost:3000');
       }
-      if (!candidates.includes(window.location.origin)) {
-        candidates.push(window.location.origin);
+      if (!candidates.includes('http://127.0.0.1:3000')) {
+        candidates.push('http://127.0.0.1:3000');
       }
     }
 
