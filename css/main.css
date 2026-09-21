@@ -366,6 +366,18 @@ button, input, select, textarea {
   box-shadow: 0 0 8px #10B981;
 }
 
+.db-status-dot.connecting {
+  background: #3B82F6;
+  box-shadow: 0 0 8px #3B82F6;
+  animation: pulse-db-dot 1.4s infinite ease-in-out;
+}
+
+@keyframes pulse-db-dot {
+  0% { transform: scale(0.95); opacity: 0.7; box-shadow: 0 0 4px #3B82F6; }
+  50% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 10px #3B82F6; }
+  100% { transform: scale(0.95); opacity: 0.7; box-shadow: 0 0 4px #3B82F6; }
+}
+
 .db-status-dot.disconnected {
   background: #F59E0B;
   box-shadow: 0 0 6px #F59E0B;
@@ -1937,6 +1949,40 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   flex-shrink: 0;
 }
 
+/* ==========================================================================
+   RESPONSIVE DESIGN SYSTEM (Mobile, Tablet, Laptop, Landscape & Print)
+   ========================================================================== */
+
+/* Universal Responsive Images & Media Elements */
+img, svg, video, canvas, audio, iframe, embed, object {
+  max-width: 100%;
+  height: auto;
+}
+
+img {
+  object-fit: contain;
+  display: block;
+}
+
+.brand-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  aspect-ratio: 1 / 1;
+}
+
+.login-split-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  aspect-ratio: auto;
+}
+
+/* Base Form Input Touch Optimization */
+button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge, .doc-remove-btn, .modal-close, .ai-floating-fab, .ai-cat-filter-btn, .news-pill, .video-playlist-item, .btn-toggle-pwd {
+  touch-action: manipulation;
+}
+
 /* --- Laptop & Large Tablet (max-width: 1024px) --- */
 @media (max-width: 1024px) {
   .main-wrapper {
@@ -1996,6 +2042,8 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   html, body {
     max-width: 100vw;
     overflow-x: hidden;
+    position: relative;
+    width: 100%;
   }
 
   .main-wrapper {
@@ -2026,10 +2074,12 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   .brand-icon {
     width: 42px;
     height: 42px;
+    flex-shrink: 0;
   }
 
   .brand-title {
     font-size: clamp(1.05rem, 3.8vw, 1.25rem);
+    line-height: 1.2;
   }
 
   .brand-subtitle {
@@ -2052,6 +2102,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
     padding: 0.55rem 0.75rem;
     min-height: 44px;
     box-sizing: border-box;
+    justify-content: center;
   }
 
   .user-role-badge {
@@ -2059,7 +2110,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
     justify-content: center;
     padding: 0.45rem 0.75rem;
     font-size: 0.8rem;
-    min-height: 42px;
+    min-height: 44px;
     box-sizing: border-box;
   }
 
@@ -2068,7 +2119,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
     justify-content: center;
     padding: 0.45rem 0.75rem;
     font-size: 0.78rem;
-    min-height: 42px;
+    min-height: 44px;
     box-sizing: border-box;
   }
 
@@ -2091,6 +2142,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
 
   .hero-content h1 {
     font-size: clamp(1.3rem, 4.5vw, 1.6rem);
+    line-height: 1.25;
   }
 
   .hero-content p {
@@ -2117,7 +2169,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
     justify-content: center;
     font-size: 0.8rem;
     padding: 0.5rem 0.6rem;
-    min-height: 42px;
+    min-height: 44px;
   }
 
   .hero-user-display {
@@ -2142,6 +2194,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   .stat-icon-wrapper {
     width: 44px;
     height: 44px;
+    flex-shrink: 0;
   }
 
   .stat-label {
@@ -2172,7 +2225,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   }
 
   .search-input {
-    font-size: 16px; /* Prevents auto-zoom on mobile browsers */
+    font-size: 16px; /* Prevents auto-zoom on iOS/Android */
     padding: 0.7rem 1rem 0.7rem 2.6rem;
     min-height: 44px;
   }
@@ -2187,7 +2240,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   .select-filter {
     width: 100%;
     min-width: 0;
-    font-size: 16px;
+    font-size: 16px; /* Prevents auto-zoom */
     padding: 0.65rem 1.8rem 0.65rem 0.75rem;
     min-height: 44px;
   }
@@ -2203,23 +2256,29 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
     flex: 1;
     padding: 0.6rem;
     min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   /* Table View */
   .table-container {
     border-radius: var(--radius-md);
     margin-bottom: 1.5rem;
+    max-width: 100%;
   }
 
   .table-responsive {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     width: 100%;
+    max-width: 100%;
   }
 
   .noc-table {
     min-width: 760px;
     font-size: 0.85rem;
+    width: 100%;
   }
 
   .noc-table th,
@@ -2229,12 +2288,16 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
 
   .table-actions {
     gap: 0.35rem;
+    flex-wrap: nowrap;
   }
 
   .table-actions .btn {
     padding: 0.45rem 0.65rem;
-    min-height: 38px;
-    min-width: 38px;
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   /* Grid Card View */
@@ -2272,15 +2335,21 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
     padding: 0.5rem;
     align-items: center;
     justify-content: center;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
   }
 
   .modal-container,
   .modal-card {
     width: 100% !important;
-    max-width: 100% !important;
+    max-width: calc(100vw - 1rem) !important;
     max-height: calc(100vh - 20px) !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     border-radius: var(--radius-lg);
+    box-sizing: border-box !important;
   }
 
   .modal-header {
@@ -2292,15 +2361,21 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   }
 
   .modal-close {
-    width: 38px;
-    height: 38px;
+    width: 44px;
+    height: 44px;
     font-size: 1.35rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
   }
 
   .modal-body {
     padding: 1rem 1.15rem;
     max-height: calc(90vh - 120px);
     -webkit-overflow-scrolling: touch;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .modal-footer {
@@ -2333,6 +2408,8 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
     font-size: 16px; /* Prevents auto-zoom on mobile */
     padding: 0.7rem 0.85rem;
     min-height: 44px;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .form-textarea {
@@ -2341,8 +2418,9 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
 
   /* Login Split Modal Responsive Stack */
   .login-split-container {
-    max-width: 100% !important;
+    max-width: calc(100vw - 1rem) !important;
     border-radius: var(--radius-lg) !important;
+    overflow: hidden;
   }
 
   .login-split-layout {
@@ -2390,6 +2468,35 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
 
   .dropzone {
     padding: 1.25rem 1rem;
+    min-height: 120px;
+  }
+
+  /* Aiven Server Section Responsive Card */
+  #aivenServerSection div[style*="grid-template-columns"] {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important;
+    gap: 0.5rem !important;
+  }
+
+  #aivenStatsPillsContainer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  #aivenServerSection .btn {
+    flex: 1 1 calc(50% - 0.5rem);
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  /* Code Blocks Responsive Wrapping */
+  #sqlSchemaCodeBlock,
+  pre {
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-size: 0.78rem;
   }
 
   /* Toasts on mobile */
@@ -2398,6 +2505,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
     right: 0.75rem;
     bottom: 0.75rem;
     bottom: max(0.75rem, env(safe-area-inset-bottom));
+    max-width: calc(100vw - 1.5rem);
   }
 
   .toast {
@@ -2405,6 +2513,42 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
     max-width: 100%;
     width: 100%;
     padding: 0.75rem 1rem;
+    font-size: 0.88rem;
+  }
+
+  /* Floating Bulk Selection Bar on Mobile */
+  .bulk-selection-floating-bar {
+    width: calc(100% - 1.5rem) !important;
+    max-width: 500px !important;
+    bottom: max(1rem, env(safe-area-inset-bottom)) !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    padding: 0.75rem 1rem !important;
+    border-radius: var(--radius-lg) !important;
+    box-sizing: border-box;
+  }
+
+  .bulk-floating-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+  }
+
+  .bulk-floating-info {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .bulk-floating-actions {
+    width: 100%;
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .bulk-floating-actions .btn {
+    flex: 1 1 auto;
+    min-height: 40px;
+    justify-content: center;
   }
 }
 
@@ -2444,14 +2588,14 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   .doc-list-item-actions .btn {
     flex: 1 1 auto;
     justify-content: center;
-    min-height: 40px;
+    min-height: 44px;
     font-size: 0.82rem;
     padding: 0.45rem 0.65rem;
   }
 
   .doc-list-item-actions .btn-action-delete {
     flex: 0 0 44px;
-    min-height: 40px;
+    min-height: 44px;
   }
 
   .pagination-container {
@@ -2468,8 +2612,9 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   }
 
   .pagination-btn {
-    min-width: 2.4rem;
-    height: 2.4rem;
+    min-width: 2.6rem;
+    height: 2.6rem;
+    min-height: 44px;
   }
 
   /* News Detail Modal Metadata Stack */
@@ -2494,6 +2639,11 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   #supabaseCredentialsSection > div:last-child button {
     width: 100%;
     justify-content: center;
+    min-height: 44px;
+  }
+
+  #aivenServerSection .btn {
+    flex: 1 1 100%;
   }
 }
 
@@ -2526,7 +2676,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   .db-status-badge {
     flex: 1 1 100%;
     width: 100%;
-    min-height: 42px;
+    min-height: 44px;
   }
 
   .hero-content h1 {
@@ -2600,6 +2750,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   .modal-footer .btn {
     width: 100%;
     flex: 1 1 100%;
+    min-height: 44px;
   }
 
   /* User DB Search & Add User Stack */
@@ -2616,6 +2767,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   #userDatabaseModal .modal-body > div:first-child button {
     width: 100%;
     justify-content: center;
+    min-height: 44px;
   }
 }
 
@@ -2636,6 +2788,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   .hero-actions .btn {
     flex: 1 1 100%;
     width: 100%;
+    min-height: 44px;
   }
 
   .stats-grid {
@@ -2656,8 +2809,8 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
   }
 }
 
-/* --- Landscape Mobile Orientation (max-height: 550px) --- */
-@media (orientation: landscape) and (max-height: 550px) {
+/* --- Landscape Mobile Orientation (max-height: 600px) --- */
+@media (orientation: landscape) and (max-height: 600px) {
   .navbar {
     padding: 0.35rem 0.85rem;
     padding-top: max(0.35rem, env(safe-area-inset-top));
@@ -2677,7 +2830,7 @@ button, input, select, textarea, a, .view-btn, .pagination-btn, .db-status-badge
 
   .nav-actions .btn {
     flex: 0 0 auto;
-    min-height: 36px;
+    min-height: 38px;
     padding: 0.35rem 0.65rem;
     font-size: 0.78rem;
   }
@@ -5060,5 +5213,124 @@ body:not(.role-developer) #sbyimAIModal {
   border-color: #F87171 !important;
   color: #991B1B !important;
   box-shadow: 0 4px 12px rgba(225, 29, 72, 0.15);
+}
+
+/* ==========================================================================
+   Developer Bulk Deletion & Selection Tools
+   ========================================================================== */
+.noc-select-checkbox {
+  width: 17px;
+  height: 17px;
+  accent-color: #DC2626;
+  cursor: pointer;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+.developer-select-col {
+  width: 44px;
+  min-width: 44px;
+  text-align: center;
+  padding-left: 0.65rem !important;
+  padding-right: 0.65rem !important;
+}
+
+.btn-bulk-delete {
+  background: linear-gradient(135deg, #DC2626, #B91C1C);
+  color: #fff !important;
+  border-color: #B91C1C !important;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
+  transition: all var(--transition-fast);
+}
+
+.btn-bulk-delete:hover:not(:disabled) {
+  background: linear-gradient(135deg, #B91C1C, #991B1B);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.35);
+}
+
+.btn-bulk-delete:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Floating Bulk Selection Action Bar */
+.bulk-selection-floating-bar {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 990;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+  padding: 0.6rem 1.35rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.38), 0 0 20px rgba(220, 38, 38, 0.28);
+  animation: slideUpFloat 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUpFloat {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.bulk-floating-content {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.bulk-floating-info {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.bulk-floating-badge {
+  background: #DC2626;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 0.12rem 0.55rem;
+  border-radius: 9999px;
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.6);
+}
+
+.bulk-floating-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-grid-select {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 0.25rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-xs);
 }
 

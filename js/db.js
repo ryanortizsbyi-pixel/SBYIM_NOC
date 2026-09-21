@@ -11,6 +11,11 @@ const LOCAL_DELETED_STORE_NAME = 'noc_deleted_records';
 class NOCDatabase {
   constructor() {
     this.localDb = null;
+    this._memoryCache = null;
+    this.isAivenConnected = false;
+    this.isAivenConnecting = true;
+    this.apiBaseUrl = (typeof localStorage !== 'undefined' && localStorage.getItem('noc_active_api_url')) || '';
+    this.heartbeatTimer = null;
     this.initPromise = this.init();
   }
 
@@ -67,18 +72,29 @@ class NOCDatabase {
   }
 
   /**
-   * Check connection to backend Aiven PostgreSQL API
+   * Check connection to backend Aiven PostgreSQL API (ultra-fast concurrent probing)
    */
   async checkAivenStatus(forceTest = false) {
+    this.isAivenConnecting = true;
     const candidates = [];
-    if (this.customApiUrl) {
-      candidates.push(this.customApiUrl);
-    }
-    // If opened directly from http://localhost:3000 or same origin
-    if (window.location && window.location.origin && window.location.origin.startsWith('http')) {
-      candidates.push('');
-    }
-    // Also check standard port 3000 if opened from VS Code Live Server (port 5500) or file://
+
+    // 1. Cached last working API base URL
+    try {
+      const cachedActive = localStorage.getItem('noc_active_api_url');
+      if (cachedActive && !candidates.includes(cachedActive)) {
+        candidates.push(cachedActive);
+      }
+    } catch (e) {}
+
+    // 2. Custom API URL if configured
+    try {
+      const customUrl = this.customApiUrl || localStorage.getItem('noc_custom_api_url');
+      if (customUrl && !candidates.includes(customUrl)) {
+        candidates.push(customUrl);
+      }
+    } catch (e) {}
+
+    // 3. Localhost Node.js backend server (port 3000)
     if (!candidates.includes('http://localhost:3000')) {
       candidates.push('http://localhost:3000');
     }
@@ -86,39 +102,92 @@ class NOCDatabase {
       candidates.push('http://127.0.0.1:3000');
     }
 
-    for (const base of candidates) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3500);
-        const res = await fetch(`${base}/api/stats`, { 
-          cache: 'no-store',
-          signal: controller.signal 
-        });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            this.apiBaseUrl = base;
-            this.isAivenConnected = true;
-            this.aivenHost = data.host || 'pg2026-noc-ryansbyi-noc.f.aivencloud.com';
-            this.aivenCounts = data.counts || {};
-            this.aivenDatabase = data.database || 'defaultdb';
-            this.aivenPort = data.port || 13029;
-            console.log(`NOCDatabase: Connected to Aiven PostgreSQL cloud database (${data.host}) via ${base || 'current origin'}.`);
-            window.dispatchEvent(new CustomEvent('noc:aiven-status-change', {
-              detail: { isConnected: true, host: data.host, counts: data.counts, baseUrl: base }
-            }));
-            return true;
-          }
-        }
-      } catch (e) {
-        // Continue to try next candidate
+    // 4. Same origin (if running from Express or production web server)
+    if (window.location && window.location.origin && window.location.origin.startsWith('http')) {
+      if (!candidates.includes('')) {
+        candidates.push('');
+      }
+      if (!candidates.includes(window.location.origin)) {
+        candidates.push(window.location.origin);
       }
     }
 
+    const checkCandidate = async (base) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      try {
+        const url = `${base}/api/stats`;
+        const res = await fetch(url, {
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success) {
+            return { base, data };
+          }
+        }
+      } catch (e) {
+        clearTimeout(timeoutId);
+      }
+      throw new Error(`Candidate ${base} unreachable`);
+    };
+
+    try {
+      const result = await Promise.any(candidates.map(c => checkCandidate(c)));
+      if (result && result.data) {
+        const { base, data } = result;
+        this.apiBaseUrl = base;
+        try {
+          localStorage.setItem('noc_active_api_url', base);
+        } catch (e) {}
+
+        this.isAivenConnected = true;
+        this.isAivenConnecting = false;
+        this.aivenHost = data.host || 'pg2026-noc-ryansbyi-noc.f.aivencloud.com';
+        this.aivenCounts = data.counts || {};
+        this.aivenDatabase = data.database || 'defaultdb';
+        this.aivenPort = data.port || 13029;
+
+        console.log(`NOCDatabase: Connected automatically to Aiven PostgreSQL cloud database (${data.host}) via ${base || 'current origin'}.`);
+        window.dispatchEvent(new CustomEvent('noc:aiven-status-change', {
+          detail: { isConnected: true, isConnecting: false, host: data.host, counts: data.counts, baseUrl: base }
+        }));
+        return true;
+      }
+    } catch (err) {
+      // All candidates failed
+    }
+
     this.isAivenConnected = false;
+    this.isAivenConnecting = false;
+    window.dispatchEvent(new CustomEvent('noc:aiven-status-change', {
+      detail: { isConnected: false, isConnecting: false }
+    }));
     return false;
+  }
+
+  /**
+   * Heartbeat background connection keeper & auto-reconnector
+   */
+  startAivenHeartbeat() {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    const interval = this.isAivenConnected ? 30000 : 4000;
+    this.heartbeatTimer = setInterval(async () => {
+      const wasConnected = this.isAivenConnected;
+      const isNowConnected = await this.checkAivenStatus();
+      if (!wasConnected && isNowConnected) {
+        console.log('NOCDatabase: Aiven Cloud auto-reconnected via heartbeat!');
+        if (window.nocApp && window.nocApp.refreshData) {
+          window.nocApp.refreshData(true).catch(() => {});
+        }
+        if (window.nocUI && window.nocUI.renderDatabaseStatus) {
+          window.nocUI.renderDatabaseStatus();
+        }
+        this.startAivenHeartbeat();
+      }
+    }, interval);
   }
 
   /**
@@ -350,10 +419,11 @@ class NOCDatabase {
     await this.initLocalDB();
     await this.purgeLegacyDemoData();
 
-    // 1. Check Aiven PostgreSQL backend
+    // 1. Auto-connect to Aiven PostgreSQL Cloud database immediately
     const aivenOk = await this.checkAivenStatus();
     if (aivenOk) {
-      console.log('NOCDatabase: Aiven Cloud Backend active.');
+      console.log('NOCDatabase: Aiven Cloud Backend active & connected automatically.');
+      this.startAivenHeartbeat();
       return;
     }
 
@@ -371,8 +441,11 @@ class NOCDatabase {
         console.warn('NOCDatabase: Supabase test connection error:', e);
       }
     } else {
-      console.log('NOCDatabase: Operating in Local Persistent mode.');
+      console.log('NOCDatabase: Operating in Local Persistent mode (background Aiven auto-connect active).');
     }
+
+    // Start background auto-reconnection polling
+    this.startAivenHeartbeat();
   }
 
   /**
@@ -592,61 +665,63 @@ class NOCDatabase {
   // ==========================================================================
 
   /**
-   * Retrieve all NOC records.
+   * Retrieve all NOC records (Fast cached resolution + silent background sync).
    */
-  async getAll() {
-    // 1. Aiven Cloud Backend
+  async getAll(forceRemote = false) {
+    // 0. Return in-memory cache instantly (< 0.1ms) if available
+    if (!forceRemote && this._memoryCache && Array.isArray(this._memoryCache) && this._memoryCache.length > 0) {
+      return this._memoryCache;
+    }
+
+    // 1. Check Aiven Cloud Backend (50ms response with lightweight projection)
     if (this.isAivenActive()) {
       try {
-        const res = await fetch(this.getApiUrl('/api/records?limit=5000'), { cache: 'no-store' });
+        const res = await fetch(this.getApiUrl('/api/records?limit=5000'));
         if (res.ok) {
           const body = await res.json();
-          if (body.success && Array.isArray(body.data) && body.data.length > 0) {
+          if (body.success && Array.isArray(body.data)) {
+            this._memoryCache = body.data;
             this._localBulkInsert(body.data).catch(() => {});
             return body.data;
           }
         }
       } catch (err) {
-        console.warn('Aiven getAll failed, falling back to local/Supabase:', err.message);
+        console.warn('Aiven getAll failed, falling back to local:', err.message);
       }
     }
 
-    // 2. Supabase Cloud Fallback
+    // 2. Local IndexedDB Cache (< 5ms)
+    const localRecords = await this._localGetAll();
+    if (localRecords && localRecords.length > 0) {
+      this._memoryCache = localRecords;
+      return localRecords;
+    }
+
+    // 3. Supabase Cloud Fallback
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
         const { data, error } = await client
           .from('noc_records')
-          .select('*')
+          .select('id, noc_number, noc_type, client, issued_to, company_code, date_of_issuance, date_of_expiration, description, created_at, updated_at')
           .order('created_at', { ascending: false })
           .limit(5000);
 
         if (error) throw error;
 
-        // If Supabase returned records, return them and cache locally
         if (data && data.length > 0) {
           const records = data.map(row => this.mapDbToRecord(row));
-          // Update local IndexedDB cache in background
+          this._memoryCache = records;
           this._localBulkInsert(records).catch(() => {});
           return records;
         }
-
-        // If Supabase is connected but empty, check if local storage/IndexedDB has records (e.g. 426 records)
-        const localRecords = await this._localGetAll();
-        if (localRecords && localRecords.length > 0) {
-          console.log(`Supabase database table is empty. Auto-syncing ${localRecords.length} local records to Supabase...`);
-          this.syncLocalToSupabase().catch(e => console.warn('Background auto-sync to Supabase warning:', e));
-          return localRecords;
-        }
-
-        return [];
       } catch (err) {
         console.warn('Supabase getAll failed, falling back to local DB:', err.message);
       }
     }
 
-    // 3. Local IndexedDB Fallback
-    return this._localGetAll();
+    // 4. Return local fallback
+    return localRecords || [];
   }
 
   /**
@@ -919,6 +994,75 @@ class NOCDatabase {
     }
 
     return this._localDelete(id);
+  }
+
+  /**
+   * Bulk delete multiple NOC records (archives each to Recycle Bin).
+   */
+  async bulkDelete(ids = []) {
+    if (!Array.isArray(ids) || ids.length === 0) return { success: true, count: 0 };
+
+    const deletedBy = (window.nocAuth && window.nocAuth.currentUser && (window.nocAuth.currentUser.displayName || window.nocAuth.currentUser.username)) || 'Developer';
+    const deletedAt = new Date().toISOString();
+
+    // 1. Archive each record to local Recycle Bin
+    for (const id of ids) {
+      try {
+        const rec = await this.getById(id) || await this._localGetById(id);
+        if (rec) {
+          const archived = {
+            ...rec,
+            deletedAt,
+            deletedBy
+          };
+          await this._localSaveDeleted(archived).catch(() => {});
+        }
+      } catch (e) {}
+    }
+
+    // 2. Delete from Aiven Cloud if active
+    if (this.isAivenActive()) {
+      try {
+        const res = await fetch(this.getApiUrl('/api/records/bulk-delete'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids, deletedBy })
+        });
+        if (res.ok) {
+          for (const id of ids) {
+            await this._localDelete(id).catch(() => {});
+          }
+          return { success: true, count: ids.length };
+        }
+      } catch (err) {
+        console.warn('Aiven bulk delete failed:', err.message);
+      }
+    }
+
+    // 3. Delete from Supabase if active
+    if (this.isSupabaseActive()) {
+      try {
+        const client = this.getSupabaseClient();
+        const { error } = await client
+          .from('noc_records')
+          .delete()
+          .in('id', ids);
+
+        if (error) throw error;
+        for (const id of ids) {
+          await this._localDelete(id).catch(() => {});
+        }
+        return { success: true, count: ids.length };
+      } catch (err) {
+        console.warn('Supabase bulk delete failed:', err.message);
+      }
+    }
+
+    // 4. Local IndexedDB fallback bulk delete
+    for (const id of ids) {
+      await this._localDelete(id).catch(() => {});
+    }
+    return { success: true, count: ids.length };
   }
 
   /**

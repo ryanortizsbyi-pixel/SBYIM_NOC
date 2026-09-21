@@ -16,20 +16,18 @@ class NOCApp {
   }
 
   /**
-   * Main bootstrap method
+   * Main bootstrap method - Lightning Fast Immediate Load
    */
   async init() {
     console.log('Initializing NOC Portal Application...');
 
-    // 1. Await database initialization and automatic Supabase cloud connection
-    if (window.nocDB && window.nocDB.initPromise) {
-      await window.nocDB.initPromise;
-    }
-
-    // 2. Initialize UI & Auth
+    // 1. Initialize UI & Auth immediately
     window.nocUI.init();
 
-    // 2.1 Set default sort and initial search query for active user
+    // 2. Bind event listeners immediately so all buttons & modals respond instantly
+    this.bindEvents();
+
+    // 3. Set default sort and initial search query for active user
     const isSBYIM = window.nocAuth && window.nocAuth.isSBYIM();
     const isSecurity = window.nocAuth && window.nocAuth.isSecurity();
     const isEmployee = window.nocAuth && (window.nocAuth.isEmployee ? window.nocAuth.isEmployee() : window.nocAuth.isMain());
@@ -56,19 +54,45 @@ class NOCApp {
       this.searchQuery = '';
     }
 
-    // 3. Seed initial realistic database if empty
-    await window.seedInitialDatabaseIfEmpty();
-
-    // 4. Load all records from active database (Supabase Cloud or Local fallback)
-    await this.refreshData();
-
-    // 5. Bind event listeners & populate type filters and form options
-    this.bindEvents();
+    // 4. Populate type filters and form options
     this.populateTypeFilterOptions();
     this.populateFormTypeOptions('');
     this.populateFormContractorOptions('');
 
-    // 6. Initialize SBYIM AI Assistant UI and sync Approved Documents Knowledge Base
+    // Listen for Aiven status change event to auto-refresh data whenever connected
+    window.addEventListener('noc:aiven-status-change', async (e) => {
+      if (e.detail && e.detail.isConnected) {
+        console.log('NOCApp: Aiven connected, synchronizing live records and stats...');
+        await this.refreshData(true);
+        this.populateTypeFilterOptions();
+        this.populateFormTypeOptions('');
+        this.populateFormContractorOptions('');
+      }
+    });
+
+    // 5. Connect to Aiven and load all records immediately
+    if (window.nocDB && window.nocDB.initPromise) {
+      try {
+        await Promise.race([
+          window.nocDB.initPromise,
+          new Promise(resolve => setTimeout(resolve, 800))
+        ]);
+      } catch (e) {}
+    }
+
+    await this.refreshData(window.nocDB && window.nocDB.isAivenActive());
+
+    // 6. Background remote sync
+    if (window.nocDB && window.nocDB.initPromise) {
+      window.nocDB.initPromise.then(async () => {
+        if (window.seedInitialDatabaseIfEmpty) {
+          await window.seedInitialDatabaseIfEmpty();
+        }
+        await this.refreshData(true);
+      }).catch(err => console.warn('Background DB sync warning:', err));
+    }
+
+    // 7. Initialize SBYIM AI Assistant UI in background
     if (window.sbyimAIUI) {
       window.sbyimAIUI.init();
     }
@@ -80,11 +104,11 @@ class NOCApp {
   }
 
   /**
-   * Fetch latest data from IndexedDB and re-render
+   * Fetch latest data from database and re-render
    */
-  async refreshData() {
+  async refreshData(forceRemote = false) {
     try {
-      this.allRecords = await window.nocDB.getAll();
+      this.allRecords = await window.nocDB.getAll(forceRemote);
       if (Array.isArray(this.allRecords)) {
         this.allRecords.forEach(r => {
           if (r && r.issuedTo) {
@@ -2173,6 +2197,49 @@ class NOCApp {
   }
 
   /**
+   * Bulk delete selected records (Developer only)
+   */
+  async bulkDeleteSelected() {
+    const isDeveloper = window.nocAuth && window.nocAuth.isDeveloper && window.nocAuth.isDeveloper();
+    if (!isDeveloper) {
+      window.showToast('Developer role required for bulk deletion.', 'error');
+      return;
+    }
+
+    const ids = Array.from(window.nocUI.selectedRecordIds || []);
+    if (ids.length === 0) {
+      window.showToast('No records selected for deletion.', 'warning');
+      return;
+    }
+
+    const confirmBtn = document.getElementById('btnConfirmBulkDelete');
+    const originalText = confirmBtn ? confirmBtn.innerHTML : 'Confirm Bulk Delete';
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = `<span>⏳ Deleting ${ids.length} records...</span>`;
+    }
+
+    try {
+      await window.nocDB.bulkDelete(ids);
+      window.nocUI.closeBulkDeleteModal();
+      window.nocUI.clearRecordSelection();
+      await this.refreshData();
+      window.showToast(`Successfully moved ${ids.length} NOC record(s) to Recycle Bin.`, 'info');
+      if (window.nocUI.updateRecycleBinBadge) {
+        window.nocUI.updateRecycleBinBadge().catch(() => {});
+      }
+    } catch (err) {
+      console.error('Bulk delete error:', err);
+      window.showToast('Bulk delete failed: ' + (err.message || 'Unknown error'), 'error');
+    } finally {
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = originalText;
+      }
+    }
+  }
+
+  /**
    * Handle NOC Add/Edit Form submission
    */
   async handleFormSubmit() {
@@ -2418,7 +2485,14 @@ class NOCApp {
 }
 
 // Bootstrap application once DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-  window.nocApp = new NOCApp();
-  window.nocApp.init();
-});
+function bootstrapApp() {
+  if (!window.nocApp) {
+    window.nocApp = new NOCApp();
+    window.nocApp.init().catch(err => console.error('NOCApp init error:', err));
+  }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootstrapApp);
+} else {
+  bootstrapApp();
+}

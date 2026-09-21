@@ -6,6 +6,7 @@
 class UIManager {
   constructor() {
     this.currentRecords = [];
+    this.selectedRecordIds = new Set();
     this.activeView = 'table'; // 'table' or 'grid'
     this.currentEditingId = null;
     this.pendingUploadFiles = []; // Temporary files buffer for the create/edit form
@@ -19,6 +20,7 @@ class UIManager {
   init() {
     this.bindAuthEvents();
     this.bindDatabaseEvents();
+    this.bindBulkDeleteEvents();
     this.initDatePickers();
     this.updateUserBadge();
     this.renderDatabaseStatus();
@@ -450,6 +452,8 @@ class UIManager {
     if (window.sbyimAIUI && window.sbyimAIUI.updateRoleView) {
       window.sbyimAIUI.updateRoleView();
     }
+
+    this.updateSelectionUI();
   }
 
   /**
@@ -497,6 +501,8 @@ class UIManager {
     this.closeEntryModal();
     this.closeDetailsModal();
     this.closeDeleteModal();
+    this.closeBulkDeleteModal();
+    this.clearRecordSelection();
     this.closeRequirementsModal();
     this.closeCocModal();
     this.closeAiDocumentsModal();
@@ -552,9 +558,48 @@ class UIManager {
   }
 
   /**
-   * Listen to auth change events
+   * Listen to auth change events & delegated auth clicks
    */
   bindAuthEvents() {
+    // 1. Global delegated click listeners for authentication buttons
+    document.addEventListener('click', (e) => {
+      const signInBtn = e.target.closest('#btnHeaderSignIn, .btn-header-signin');
+      if (signInBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.openLoginModal(true);
+        return;
+      }
+
+      const switchRoleBtn = e.target.closest('#btnHeaderSwitchRole');
+      if (switchRoleBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.openLoginModal(false);
+        return;
+      }
+
+      const logoutBtn = e.target.closest('#btnHeaderLogout');
+      if (logoutBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (window.nocAuth) {
+          window.nocAuth.logout();
+          this.showToast('You have been logged out. Returned to landing screen.', 'info');
+        }
+        return;
+      }
+
+      const closeLoginBtn = e.target.closest('#btnCloseLoginModal');
+      if (closeLoginBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.closeLoginModal();
+        return;
+      }
+    });
+
+    // 2. Auth state change listener
     window.addEventListener('noc:auth-change', () => {
       this.resetSessionState();
       this.updateUserBadge();
@@ -611,8 +656,10 @@ class UIManager {
         guestPrompt.style.display = 'block';
         const titleEl = guestPrompt.querySelector('.empty-title');
         const textEl = guestPrompt.querySelector('.empty-text');
+        const landingSignInBtn = document.getElementById('btnLandingSignIn');
         if (titleEl) titleEl.textContent = 'Welcome to SBYIM NOC Portal';
         if (textEl) textEl.textContent = 'Please sign in to access, search, and view certificate compliance records.';
+        if (landingSignInBtn) landingSignInBtn.style.display = 'inline-flex';
       }
       return;
     }
@@ -632,12 +679,14 @@ class UIManager {
         guestPrompt.style.display = 'block';
         const titleEl = guestPrompt.querySelector('.empty-title');
         const textEl = guestPrompt.querySelector('.empty-text');
+        const landingSignInBtn = document.getElementById('btnLandingSignIn');
         if (titleEl) {
           titleEl.textContent = 'Guest Certificate Lookup';
         }
         if (textEl) {
           textEl.textContent = 'Active NOC records and permits corresponding to your account are displayed below.';
         }
+        if (landingSignInBtn) landingSignInBtn.style.display = 'none';
       }
       return;
     }
@@ -681,10 +730,13 @@ class UIManager {
     const canViewCompanyCode = window.nocAuth && window.nocAuth.canViewCompanyCode ? window.nocAuth.canViewCompanyCode() : false;
     const isEmployee = window.nocAuth && (window.nocAuth.isEmployee ? window.nocAuth.isEmployee() : window.nocAuth.isMain());
 
+    const thTableSelectAll = document.getElementById('thTableSelectAll');
     const thTableNocType = document.getElementById('thTableNocType');
     const thTableClient = document.getElementById('thTableClient');
     const thTableDesc = document.getElementById('thTableDesc');
     const thTableActions = document.getElementById('thTableActions');
+
+    if (thTableSelectAll) thTableSelectAll.style.display = isDeveloper ? '' : 'none';
     if (thTableNocType) thTableNocType.style.display = canViewNocType ? '' : 'none';
     if (thTableClient) thTableClient.style.display = canViewClient ? '' : 'none';
     if (thTableDesc) thTableDesc.style.display = '';
@@ -692,6 +744,7 @@ class UIManager {
 
     records.forEach((rec) => {
       const status = window.nocDB.getStatus(rec.dateOfExpiration);
+      const isSelected = this.selectedRecordIds && this.selectedRecordIds.has(rec.id);
 
       let statusBadge = '';
       if (status === 'active') {
@@ -704,6 +757,9 @@ class UIManager {
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
+        <td class="developer-select-col" style="${isDeveloper ? '' : 'display:none;'} text-align:center;">
+          <input type="checkbox" class="noc-row-checkbox noc-select-checkbox" data-id="${rec.id}" ${isSelected ? 'checked' : ''} title="Select record">
+        </td>
         <td style="white-space:nowrap;">${this.escapeHTML(rec.nocNumber)}</td>
         ${canViewNocType ? `<td>${this.escapeHTML(rec.nocType)}</td>` : ''}
         ${canViewClient ? `<td>${this.escapeHTML(rec.client || '—')}</td>` : ''}
@@ -739,6 +795,7 @@ class UIManager {
     });
 
     this.bindTableActionEvents(tbody);
+    this.updateSelectionUI();
   }
 
   /**
@@ -759,6 +816,7 @@ class UIManager {
     records.forEach((rec) => {
       const status = window.nocDB.getStatus(rec.dateOfExpiration);
       const docsCount = rec.documents ? rec.documents.length : 0;
+      const isSelected = this.selectedRecordIds && this.selectedRecordIds.has(rec.id);
 
       let statusBadge = '';
       if (status === 'active') {
@@ -771,7 +829,13 @@ class UIManager {
 
       const card = document.createElement('div');
       card.className = 'noc-card';
+      card.style.position = 'relative';
       card.innerHTML = `
+        ${isDeveloper ? `
+        <div class="card-grid-select developer-select-col">
+          <input type="checkbox" class="noc-grid-checkbox noc-select-checkbox" data-id="${rec.id}" ${isSelected ? 'checked' : ''} title="Select record">
+        </div>
+        ` : ''}
         <div>
           <div class="card-header">
             <div>
@@ -832,6 +896,7 @@ class UIManager {
     });
 
     this.bindTableActionEvents(grid);
+    this.updateSelectionUI();
   }
 
   /**
@@ -911,6 +976,23 @@ class UIManager {
         } else if (action === 'download-all') {
           this.downloadAllRecordDocs(id);
         }
+      });
+    });
+
+    // Bind checkboxes for developer multi-record selection
+    container.querySelectorAll('.noc-row-checkbox, .noc-grid-checkbox').forEach((checkbox) => {
+      checkbox.addEventListener('change', (e) => {
+        e.stopPropagation();
+        const id = checkbox.getAttribute('data-id');
+        if (checkbox.checked) {
+          this.selectedRecordIds.add(id);
+        } else {
+          this.selectedRecordIds.delete(id);
+        }
+        this.updateSelectionUI();
+      });
+      checkbox.addEventListener('click', (e) => {
+        e.stopPropagation();
       });
     });
   }
@@ -1332,6 +1414,198 @@ class UIManager {
     const modal = document.getElementById('deleteConfirmModal');
     if (modal) modal.classList.remove('active');
     this.pendingDeleteId = null;
+  }
+
+  /**
+   * Open Bulk Delete Confirmation Modal (Developer Only)
+   */
+  openBulkDeleteModal() {
+    const isDeveloper = window.nocAuth && window.nocAuth.isDeveloper && window.nocAuth.isDeveloper();
+    if (!isDeveloper) {
+      this.showToast('Developer role required for bulk deletion.', 'error');
+      return;
+    }
+
+    if (!this.selectedRecordIds || this.selectedRecordIds.size === 0) {
+      this.showToast('Please select at least one NOC record to delete.', 'warning');
+      return;
+    }
+
+    const modal = document.getElementById('bulkDeleteConfirmModal');
+    const countEl = document.getElementById('bulkDeleteConfirmCount');
+    const listEl = document.getElementById('bulkDeleteRecordsList');
+
+    if (countEl) countEl.textContent = this.selectedRecordIds.size;
+
+    if (listEl) {
+      const allRecs = (window.nocApp && Array.isArray(window.nocApp.allRecords) && window.nocApp.allRecords.length > 0)
+        ? window.nocApp.allRecords
+        : (this.currentRecords || []);
+      const selectedList = allRecs.filter(r => this.selectedRecordIds.has(r.id));
+
+      let html = '';
+      const previewLimit = 100;
+      const previewItems = selectedList.slice(0, previewLimit);
+
+      previewItems.forEach(r => {
+        html += `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:0.3rem 0; border-bottom:1px solid rgba(0,0,0,0.06);">
+            <span style="font-weight:700; color:var(--text-main); font-size:0.84rem;">${this.escapeHTML(r.nocNumber || r.id)}</span>
+            <span style="color:#64748B; font-size:0.78rem;">${this.escapeHTML((r.issuedTo || '').toUpperCase())}${r.client ? ` · ${this.escapeHTML(r.client)}` : ''}</span>
+          </div>
+        `;
+      });
+
+      if (selectedList.length > previewLimit) {
+        html += `<div style="text-align:center; padding:0.4rem 0; color:var(--text-muted); font-size:0.75rem;">... and ${selectedList.length - previewLimit} more records</div>`;
+      }
+
+      listEl.innerHTML = html || '<div>No record preview available</div>';
+    }
+
+    if (modal) modal.classList.add('active');
+  }
+
+  /**
+   * Close Bulk Delete Confirmation Modal
+   */
+  closeBulkDeleteModal() {
+    const modal = document.getElementById('bulkDeleteConfirmModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  /**
+   * Clear all selected records
+   */
+  clearRecordSelection() {
+    this.selectedRecordIds.clear();
+    document.querySelectorAll('.noc-row-checkbox, .noc-grid-checkbox').forEach(cb => {
+      cb.checked = false;
+    });
+    const selectAllCheckbox = document.getElementById('selectAllNocCheckbox');
+    if (selectAllCheckbox) {
+      selectAllCheckbox.checked = false;
+      selectAllCheckbox.indeterminate = false;
+    }
+    this.updateSelectionUI();
+  }
+
+  /**
+   * Update selection UI elements (counts, buttons, floating bar, select-all state)
+   */
+  updateSelectionUI() {
+    const isDeveloper = window.nocAuth && window.nocAuth.isDeveloper && window.nocAuth.isDeveloper();
+    const count = this.selectedRecordIds ? this.selectedRecordIds.size : 0;
+
+    const bulkBtn = document.getElementById('btnBulkDeleteNoc');
+    const bulkCountEl = document.getElementById('bulkDeleteSelectedCount');
+    const floatingBar = document.getElementById('bulkSelectionFloatingBar');
+    const floatingCountEl = document.getElementById('bulkFloatingCount');
+    const thSelectAll = document.getElementById('thTableSelectAll');
+
+    if (bulkCountEl) bulkCountEl.textContent = count;
+    if (floatingCountEl) floatingCountEl.textContent = count;
+
+    if (bulkBtn) {
+      bulkBtn.style.display = isDeveloper ? 'inline-flex' : 'none';
+      bulkBtn.disabled = (count === 0);
+    }
+
+    if (floatingBar) {
+      floatingBar.style.display = (isDeveloper && count > 0) ? 'block' : 'none';
+    }
+
+    if (thSelectAll) {
+      thSelectAll.style.display = isDeveloper ? '' : 'none';
+    }
+
+    document.querySelectorAll('.developer-select-col').forEach(el => {
+      el.style.display = isDeveloper ? '' : 'none';
+    });
+
+    // Update Select All Checkbox state
+    const selectAllCheckbox = document.getElementById('selectAllNocCheckbox');
+    if (selectAllCheckbox && this.currentRecords && this.currentRecords.length > 0) {
+      const allSelected = this.currentRecords.every(r => this.selectedRecordIds.has(r.id));
+      const someSelected = this.currentRecords.some(r => this.selectedRecordIds.has(r.id));
+      selectAllCheckbox.checked = allSelected;
+      selectAllCheckbox.indeterminate = !allSelected && someSelected;
+    } else if (selectAllCheckbox) {
+      selectAllCheckbox.checked = false;
+      selectAllCheckbox.indeterminate = false;
+    }
+  }
+
+  /**
+   * Bind event listeners for Bulk Delete controls
+   */
+  bindBulkDeleteEvents() {
+    // 1. Select All Checkbox in Table Header
+    const selectAllCheckbox = document.getElementById('selectAllNocCheckbox');
+    if (selectAllCheckbox) {
+      selectAllCheckbox.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        if (isChecked) {
+          (this.currentRecords || []).forEach(r => this.selectedRecordIds.add(r.id));
+        } else {
+          (this.currentRecords || []).forEach(r => this.selectedRecordIds.delete(r.id));
+        }
+        document.querySelectorAll('.noc-row-checkbox, .noc-grid-checkbox').forEach(cb => {
+          const id = cb.getAttribute('data-id');
+          cb.checked = this.selectedRecordIds.has(id);
+        });
+        this.updateSelectionUI();
+      });
+    }
+
+    // 2. Select All Visible button in floating bar
+    const btnSelectAllVisible = document.getElementById('btnSelectAllVisible');
+    if (btnSelectAllVisible) {
+      btnSelectAllVisible.addEventListener('click', () => {
+        (this.currentRecords || []).forEach(r => this.selectedRecordIds.add(r.id));
+        document.querySelectorAll('.noc-row-checkbox, .noc-grid-checkbox').forEach(cb => {
+          const id = cb.getAttribute('data-id');
+          cb.checked = this.selectedRecordIds.has(id);
+        });
+        this.updateSelectionUI();
+      });
+    }
+
+    // 3. Deselect All button in floating bar
+    const btnDeselectAll = document.getElementById('btnDeselectAllRecords');
+    if (btnDeselectAll) {
+      btnDeselectAll.addEventListener('click', () => {
+        this.clearRecordSelection();
+      });
+    }
+
+    // 4. Open Bulk Delete Confirmation Modal (from controls bar or floating bar)
+    const btnBulkDelete = document.getElementById('btnBulkDeleteNoc');
+    const btnFloatingBulkDelete = document.getElementById('btnFloatingBulkDelete');
+
+    const handleOpenBulkModal = () => {
+      this.openBulkDeleteModal();
+    };
+
+    if (btnBulkDelete) btnBulkDelete.addEventListener('click', handleOpenBulkModal);
+    if (btnFloatingBulkDelete) btnFloatingBulkDelete.addEventListener('click', handleOpenBulkModal);
+
+    // 5. Bulk Delete Modal Close buttons
+    const btnCloseBulkModal = document.getElementById('btnCloseBulkDeleteModal');
+    const btnCancelBulkDelete = document.getElementById('btnCancelBulkDelete');
+
+    if (btnCloseBulkModal) btnCloseBulkModal.addEventListener('click', () => this.closeBulkDeleteModal());
+    if (btnCancelBulkDelete) btnCancelBulkDelete.addEventListener('click', () => this.closeBulkDeleteModal());
+
+    // 6. Confirm Bulk Delete action
+    const btnConfirmBulkDelete = document.getElementById('btnConfirmBulkDelete');
+    if (btnConfirmBulkDelete) {
+      btnConfirmBulkDelete.addEventListener('click', async () => {
+        if (window.nocApp && typeof window.nocApp.bulkDeleteSelected === 'function') {
+          await window.nocApp.bulkDeleteSelected();
+        }
+      });
+    }
   }
 
   /**
@@ -2024,6 +2298,7 @@ SET password = EXCLUDED.password,
    */
   renderDatabaseStatus() {
     const isAiven = window.nocDB && window.nocDB.isAivenActive();
+    const isAivenConnecting = window.nocDB && window.nocDB.isAivenConnecting;
     const isConfigured = window.supabaseManager && window.supabaseManager.isConfigured();
     const isConnected = window.supabaseManager && window.supabaseManager.isConnected;
 
@@ -2062,12 +2337,17 @@ SET password = EXCLUDED.password,
         pillEl.style.color = '#15803D';
       }
       const host = (window.nocDB && window.nocDB.aivenHost) || 'pg2026-noc-ryansbyi-noc.f.aivencloud.com';
+      const port = (window.nocDB && window.nocDB.aivenPort) || 13029;
+      const database = (window.nocDB && window.nocDB.aivenDatabase) || 'defaultdb';
+      const counts = (window.nocDB && window.nocDB.aivenCounts) || {};
+      const nocCount = counts.noc_records !== undefined ? counts.noc_records : '394';
+
       if (msgEl) {
-        msgEl.textContent = `Active cloud database connection established to Aiven PostgreSQL (${host}:13029). All 426 NOC records, documents, and accounts are live & synchronized.`;
+        msgEl.textContent = `Active cloud database connection established to Aiven PostgreSQL (${host}:${port}). All ${nocCount} NOC records, documents, and accounts are live & synchronized.`;
       }
 
       if (hostDisp) hostDisp.textContent = host;
-      if (portDbDisp) portDbDisp.textContent = '13029 / defaultdb';
+      if (portDbDisp) portDbDisp.textContent = `${port} / ${database}`;
       if (backendDisp) {
         backendDisp.textContent = `${window.nocDB.apiBaseUrl || 'http://localhost:3000'} (Online)`;
         backendDisp.style.color = '#15803D';
@@ -2077,15 +2357,38 @@ SET password = EXCLUDED.password,
         latencyDisp.style.color = '#15803D';
       }
 
-      const counts = (window.nocDB && window.nocDB.aivenCounts) || {};
-      if (cntNoc) cntNoc.textContent = counts.noc_records !== undefined ? counts.noc_records : '426';
+      if (cntNoc) cntNoc.textContent = counts.noc_records !== undefined ? counts.noc_records : '394';
       if (cntReq) cntReq.textContent = counts.noc_requirements_docs !== undefined ? counts.noc_requirements_docs : '4';
       if (cntCoc) cntCoc.textContent = counts.sbyi_coc_docs !== undefined ? counts.sbyi_coc_docs : '3';
       if (cntAi) cntAi.textContent = counts.ai_documents !== undefined ? counts.ai_documents : '3';
       if (cntTypes) cntTypes.textContent = counts.noc_custom_types !== undefined ? counts.noc_custom_types : '14';
-      if (cntContractors) cntContractors.textContent = counts.noc_custom_contractors !== undefined ? counts.noc_custom_contractors : '18';
+      if (cntContractors) cntContractors.textContent = counts.noc_custom_contractors !== undefined ? counts.noc_custom_contractors : '19';
       if (cntUsers) cntUsers.textContent = counts.noc_users !== undefined ? counts.noc_users : '6';
 
+    } else if (isAivenConnecting) {
+      if (dotEl) {
+        dotEl.className = 'db-status-dot connecting';
+      }
+      if (textEl) textEl.textContent = 'Aiven: Connecting...';
+
+      if (iconEl) iconEl.textContent = '🟡';
+      if (headEl) headEl.textContent = 'Connecting to Aiven Cloud Database...';
+      if (pillEl) {
+        pillEl.textContent = 'Connecting';
+        pillEl.style.background = '#EFF6FF';
+        pillEl.style.color = '#1D4ED8';
+      }
+      if (msgEl) {
+        msgEl.textContent = 'Establishing secure connection to Aiven PostgreSQL cloud database (pg2026-noc-ryansbyi-noc.f.aivencloud.com:13029)...';
+      }
+      if (backendDisp) {
+        backendDisp.textContent = 'Connecting...';
+        backendDisp.style.color = '#B45309';
+      }
+      if (latencyDisp) {
+        latencyDisp.textContent = 'Probing Aiven Cloud...';
+        latencyDisp.style.color = '#B45309';
+      }
     } else if (isConnected) {
       if (dotEl) {
         dotEl.className = 'db-status-dot connected';

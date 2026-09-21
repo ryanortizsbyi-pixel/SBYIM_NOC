@@ -31,30 +31,9 @@ class AuthManager {
   }
 
   /**
-   * System accounts map (reads from dynamic cache or fallback defaults)
+   * Built-in default user accounts
    */
-  get systemUsers() {
-    if (this._cachedUsers && Object.keys(this._cachedUsers).length > 0) {
-      return this._cachedUsers;
-    }
-
-    try {
-      const stored = localStorage.getItem('noc_users_v3') || localStorage.getItem('noc_users_v2') || localStorage.getItem('noc_users_v1');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const map = {};
-          parsed.forEach(u => {
-            if (u && u.username) {
-              map[u.username.toLowerCase()] = u;
-            }
-          });
-          this._cachedUsers = map;
-          return map;
-        }
-      }
-    } catch (e) {}
-
+  get defaultAccounts() {
     return {
       ryan: {
         username: 'ryan',
@@ -99,6 +78,33 @@ class AuthManager {
         email: ''
       }
     };
+  }
+
+  /**
+   * System accounts map (reads from dynamic cache merged with default accounts)
+   */
+  get systemUsers() {
+    const combined = Object.assign({}, this.defaultAccounts);
+
+    try {
+      const stored = localStorage.getItem('noc_users_v3') || localStorage.getItem('noc_users_v2') || localStorage.getItem('noc_users_v1');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          parsed.forEach(u => {
+            if (u && u.username) {
+              combined[u.username.toLowerCase()] = u;
+            }
+          });
+        }
+      }
+    } catch (e) {}
+
+    if (this._cachedUsers && Object.keys(this._cachedUsers).length > 0) {
+      Object.assign(combined, this._cachedUsers);
+    }
+
+    return combined;
   }
 
   /**
@@ -299,6 +305,10 @@ class AuthManager {
 
   isDeveloper() {
     return Boolean(this.currentUser && this.currentUser.role === 'developer');
+  }
+
+  canBulkDelete() {
+    return this.isDeveloper();
   }
 
   canViewClient() {
