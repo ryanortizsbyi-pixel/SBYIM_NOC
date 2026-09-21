@@ -267,6 +267,35 @@ button, input, select, textarea {
   font-weight: 600;
 }
 
+.user-role-badge.is-unauthenticated {
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.btn-header-signin {
+  background: linear-gradient(135deg, #1E40AF 0%, #1D4ED8 100%);
+  color: #ffffff;
+  border: 1px solid #1E3A8A;
+  border-radius: 9999px;
+  padding: 0.42rem 1.15rem;
+  font-size: 0.86rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  box-shadow: 0 2px 8px rgba(30, 64, 175, 0.28);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.btn-header-signin:hover {
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.38);
+}
+
 .role-dot {
   width: 8px;
   height: 8px;
@@ -1040,6 +1069,45 @@ body.unauthenticated .table-container {
   background: var(--bg-surface);
   border-radius: var(--radius-lg);
   border: 1px dashed var(--border-light);
+}
+
+.landing-welcome-card {
+  text-align: center;
+  padding: 4.25rem 2rem;
+  background: #FFFFFF;
+  border-radius: 16px;
+  border: 1.5px dashed #CBD5E1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  margin-top: 1.5rem;
+  margin-bottom: 2.5rem;
+}
+
+.landing-welcome-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #E0F2FE;
+  color: #0284C7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.25rem auto;
+  font-size: 1.35rem;
+}
+
+.landing-welcome-card .empty-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #0F172A;
+  margin-bottom: 0.5rem;
+}
+
+.landing-welcome-card .empty-text {
+  color: #64748B;
+  font-size: 0.95rem;
+  max-width: 480px;
+  margin: 0 auto;
+  line-height: 1.55;
 }
 
 .empty-icon {

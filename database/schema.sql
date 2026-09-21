@@ -115,7 +115,8 @@ CREATE TABLE IF NOT EXISTS public.noc_settings (
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.noc_users (
     username VARCHAR(100) PRIMARY KEY,
-    password VARCHAR(255) NOT NULL,
+    password VARCHAR(255) DEFAULT '',
+    password_hash VARCHAR(255) DEFAULT '',
     role VARCHAR(50) NOT NULL DEFAULT 'guest',
     display_name VARCHAR(255),
     email VARCHAR(255),
@@ -123,7 +124,34 @@ CREATE TABLE IF NOT EXISTS public.noc_users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+ALTER TABLE public.noc_users ADD COLUMN IF NOT EXISTS password VARCHAR(255) DEFAULT '';
+ALTER TABLE public.noc_users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255) DEFAULT '';
+ALTER TABLE public.noc_users ALTER COLUMN password_hash DROP NOT NULL;
+ALTER TABLE public.noc_users ALTER COLUMN password_hash SET DEFAULT '';
+
 CREATE INDEX IF NOT EXISTS idx_noc_users_role ON public.noc_users (role);
+
+-- ----------------------------------------------------------------------------
+-- 9. Table: noc_deleted_records (Recycle Bin / Soft Deleted NOC Archive)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.noc_deleted_records (
+    id TEXT PRIMARY KEY,
+    noc_number VARCHAR(100) NOT NULL,
+    noc_type VARCHAR(100) NOT NULL DEFAULT 'Activity',
+    client VARCHAR(255) NOT NULL,
+    issued_to VARCHAR(255) NOT NULL,
+    company_code VARCHAR(100),
+    date_of_issuance DATE,
+    date_of_expiration DATE,
+    description TEXT,
+    documents JSONB NOT NULL DEFAULT '[]'::jsonb,
+    deleted_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    deleted_by VARCHAR(255) DEFAULT 'System Administrator',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_noc_deleted_noc_number ON public.noc_deleted_records (noc_number);
+CREATE INDEX IF NOT EXISTS idx_noc_deleted_at ON public.noc_deleted_records (deleted_at DESC);
 
 -- ----------------------------------------------------------------------------
 -- 9. Trigger: Auto updated_at timestamp
@@ -204,11 +232,26 @@ CREATE POLICY "Allow all operations on noc_users"
 INSERT INTO public.noc_custom_types (name)
 VALUES 
     ('Activity'),
-    ('Activity NOC')
+    ('Activity NOC'),
+    ('Berthing NOC'),
+    ('Construction Camp Site Approval'),
+    ('Construction Camp Size & Location Approval'),
+    ('Construction NOC'),
+    ('Design and Build NOC'),
+    ('Maintenance Activity'),
+    ('Maintenance NOC'),
+    ('Marine Survey NOC'),
+    ('O&M NOC'),
+    ('Operation & Maintenance NOC'),
+    ('Site Visit & Meeting'),
+    ('Temporary Occupancy Certificate')
 ON CONFLICT (name) DO NOTHING;
 
 INSERT INTO public.noc_custom_contractors (name)
 VALUES
+    ('GULF DUNES LANDSCAPING & AGRICULTURAL SERVICES, AN ESG COMPANY (GDL)'),
+    ('NETKOM COMMUNICATIONS TECHNOLOGY LLC (NCT)'),
+    ('ARABIC ENGINEER CONTROL & ELECTRO MECHANICAL SYSTEMS CO L.L.C. (AECEMS)'),
     ('APEX ENGINEERING & INFRASTRUCTURE LTD.'),
     ('TRANS-GULF CONTRACTING CO.'),
     ('PIONEER DEMOLITION SPECIALISTS LLC'),
@@ -216,78 +259,15 @@ VALUES
     ('METROPOLITAN BUILDERS CORP.'),
     ('AL JABER BUILDING LLC'),
     ('ARABTEC CONSTRUCTION'),
-    ('SIX CONSTRUCT')
+    ('SIX CONSTRUCT'),
+    ('ISLAND SECURITY SERVICES'),
+    ('INSPIRE INTEGRATED INFRASTRUCTURE MANAGEMENT'),
+    ('DELMA MARINE TRANSPORT & LOGISTICS'),
+    ('NATIONAL MARINE DREDGING COMPANY (NMDC)'),
+    ('EMIRATES UTILITIES & DESALINATION'),
+    ('ETISALAT TELECOMMUNICATIONS SERVICES'),
+    ('ABU DHABI DISTRIBUTION COMPANY (ADDC)')
 ON CONFLICT (name) DO NOTHING;
-
-INSERT INTO public.noc_records (id, noc_number, noc_type, client, issued_to, company_code, date_of_issuance, date_of_expiration, description, documents)
-VALUES 
-(
-    'noc_seed_001',
-    'NOC-2026-0042',
-    'Activity NOC',
-    'Municipal Urban Development Authority',
-    'APEX ENGINEERING & INFRASTRUCTURE LTD.',
-    'APEX-01',
-    '2026-01-15',
-    '2026-12-31',
-    'Construction authorization for multi-story commercial tower including structural foundation, deep basement excavation, and fire life safety system installation.',
-    '[]'::jsonb
-),
-(
-    'noc_seed_002',
-    'NOC-2026-0118',
-    'Activity',
-    'National Highway Authority',
-    'TRANS-GULF CONTRACTING CO.',
-    'TG-2026',
-    '2026-07-01',
-    '2026-09-10',
-    'Temporary road cutting permit for underground high-voltage 33kV cable laying across Sector 4B boulevard with complete traffic detour management.',
-    '[]'::jsonb
-),
-(
-    'noc_seed_003',
-    'NOC-2025-0891',
-    'Activity NOC',
-    'Vertex Commercial Properties',
-    'PIONEER DEMOLITION SPECIALISTS LLC',
-    NULL,
-    '2025-05-10',
-    '2026-05-10',
-    'Controlled mechanical demolition of obsolete two-story industrial warehouse structure, hazardous asbestos abatement, and site debris removal.',
-    '[]'::jsonb
-),
-(
-    'noc_seed_004',
-    'NOC-2026-0205',
-    'Activity',
-    'State Water & Power Dept.',
-    'SKYLINE ELECTROMECHANICAL SERVICES',
-    'SKY-04',
-    '2026-03-20',
-    '2027-03-20',
-    'Installation and commissioning of 1500kVA step-down compact substation transformer unit and feeder panel routing for residential district.',
-    '[]'::jsonb
-),
-(
-    'noc_seed_005',
-    'NOC-2026-0310',
-    'Activity NOC',
-    'Grand Plaza Shopping Mall',
-    'METROPOLITAN BUILDERS CORP.',
-    NULL,
-    '2026-06-01',
-    '2026-11-30',
-    'Internal architectural fit-out, HVAC duct installation, fire suppression sprinkler routing, and ceiling framing for retail store Units 104-106.',
-    '[]'::jsonb
-)
-ON CONFLICT (noc_number) DO UPDATE
-SET client = EXCLUDED.client,
-    issued_to = EXCLUDED.issued_to,
-    company_code = EXCLUDED.company_code,
-    date_of_issuance = EXCLUDED.date_of_issuance,
-    date_of_expiration = EXCLUDED.date_of_expiration,
-    description = EXCLUDED.description;
 
 INSERT INTO public.noc_settings (key, value)
 VALUES
@@ -295,17 +275,19 @@ VALUES
     ('portal_config', '{"autoSync": true, "theme": "light"}'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO public.noc_users (username, password, role, display_name, email)
+DELETE FROM public.noc_users WHERE lower(username) IN ('admin', 'guest', 'developer', 'main');
+
+INSERT INTO public.noc_users (username, password, password_hash, role, display_name, email)
 VALUES
-    ('ryan', 'SBYIM@2026', 'developer', 'Ryan (Developer)', 'ryan@nocportal.gov'),
-    ('admin', 'SBYIM@2026', 'admin', 'System Administrator', 'admin@nocportal.gov'),
-    ('SBYIM', 'ManagementNOC', 'admin', 'SBYIM Management', 'sbyim@nocportal.gov'),
-    ('developer', 'dev123', 'developer', 'Lead Developer (System Engineer)', 'developer@nocportal.gov'),
-    ('security', 'security123', 'security', 'Security Officer (Lookup & View)', 'security@nocportal.gov'),
-    ('main', 'main123', 'main', 'Main Control Officer (Lookup & View)', 'main@nocportal.gov'),
-    ('guest', 'guest123', 'guest', 'Guest Officer / Viewer', 'guest@nocportal.gov')
+    ('ryan', 'spider06', '$2b$12$HlGJBt12SCRFjFubXpMy/.S8c/c2Z37bnSKfK9gWYOBaZMBYTPzRK', 'developer', 'Ryan Ortiz (Developer)', ''),
+    ('SBYIM', 'NOC#2022#', '$2b$12$BVkv4SWEV7BmDQhvJ3iqoemZVA3E2yuEoEmfp4HUrzMJOe6ZCYaVS', 'admin', 'SBYI Management', ''),
+    ('security', 'sec@2024', '$2b$12$s8lKlZZy/IenffBQmA.cr.VZGjLIRCptpCML6MfsNNFNkTd1gE.9W', 'security', 'SBYIM Security Officer', ''),
+    ('Employee01', '666666@', '$2b$12$TnXNmgBadK7MinLIX9/nJeJOR0TyGLu437h3aYdR7qcZsP9di63Ha', 'employee', 'Island Security', ''),
+    ('Employee02', '777777#', '$2b$12$b.i6syQYU51.9d2XIuwq6u5sH4fTlouyZRDhK/msIywz3ZJ2Kcz.K', 'employee', 'Inspire Integrated', ''),
+    ('1GDL', '55555', '', 'guest', 'Gulf Dunes Landscapping', '')
 ON CONFLICT (username) DO UPDATE
 SET password = EXCLUDED.password,
+    password_hash = COALESCE(NULLIF(EXCLUDED.password_hash, ''), noc_users.password_hash, ''),
     role = EXCLUDED.role,
     display_name = EXCLUDED.display_name,
     email = EXCLUDED.email;
