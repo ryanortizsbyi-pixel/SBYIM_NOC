@@ -575,15 +575,19 @@ app.post('/api/records/bulk', async (req, res) => {
 });
 
 app.post('/api/records/bulk-delete', async (req, res) => {
-  const ids = req.body.ids || [];
-  const deletedBy = req.body.deletedBy || 'Developer';
-  if (!Array.isArray(ids) || ids.length === 0) {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(String) : [];
+  const deletedBy = req.body.deletedBy || 'System Administrator';
+  if (ids.length === 0) {
     return res.status(400).json({ success: false, error: 'IDs array required' });
   }
   try {
     // 1. Fetch records to archive into noc_deleted_records
-    const fetchRes = await pool.query('SELECT * FROM public.noc_records WHERE id = ANY($1)', [ids]);
+    const fetchRes = await pool.query('SELECT * FROM public.noc_records WHERE id::text = ANY($1::text[])', [ids]);
     for (const r of fetchRes.rows) {
+      let docsJson = '[]';
+      if (r.documents) {
+        docsJson = typeof r.documents === 'string' ? r.documents : JSON.stringify(r.documents);
+      }
       await pool.query(`
         INSERT INTO public.noc_deleted_records (
           id, noc_number, noc_type, client, issued_to, company_code,
@@ -604,11 +608,11 @@ app.post('/api/records/bulk-delete', async (req, res) => {
             deleted_by = EXCLUDED.deleted_by;
       `, [
         r.id, r.noc_number, r.noc_type, r.client, r.issued_to, r.company_code,
-        r.date_of_issuance, r.date_of_expiration, r.description, r.documents,
+        r.date_of_issuance, r.date_of_expiration, r.description, docsJson,
         new Date().toISOString(), deletedBy, r.created_at
-      ]);
+      ]).catch(err => console.warn('Bulk archive item error:', err.message));
     }
-    const result = await pool.query('DELETE FROM public.noc_records WHERE id = ANY($1)', [ids]);
+    const result = await pool.query('DELETE FROM public.noc_records WHERE id::text = ANY($1::text[])', [ids]);
     invalidateRecordsCache();
     await loadLightweightRecordsFromDb().catch(() => {});
     res.json({ success: true, deleted: result.rowCount });
