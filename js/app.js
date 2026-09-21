@@ -791,16 +791,22 @@ class NOCApp {
       btnConfirmDelete.addEventListener('click', async () => {
         if (window.nocUI.pendingDeleteId) {
           const deletedId = window.nocUI.pendingDeleteId;
+          const origBtnText = btnConfirmDelete.innerHTML;
+          btnConfirmDelete.disabled = true;
+          btnConfirmDelete.textContent = 'Deleting...';
           try {
             await window.nocDB.delete(deletedId);
             window.nocUI.closeDeleteModal();
-            await this.refreshData();
+            // Optimistic client filter + fresh remote sync
+            this.allRecords = (this.allRecords || []).filter(r => String(r.id) !== String(deletedId));
+            this.applyFilters();
+            await this.refreshData(true);
             window.showToast('NOC Record moved to Recycle Bin.', 'info', {
               label: '↩️ Undo',
               onClick: async () => {
                 try {
                   const restored = await window.nocDB.restoreDeletedRecord(deletedId);
-                  await this.refreshData();
+                  await this.refreshData(true);
                   window.showToast(`Restored "${restored.nocNumber || deletedId}"!`, 'success');
                 } catch (e) {
                   window.showToast('Undo failed: ' + e.message, 'error');
@@ -809,6 +815,9 @@ class NOCApp {
             });
           } catch (err) {
             window.showToast('Failed to delete record: ' + err.message, 'error');
+          } finally {
+            btnConfirmDelete.disabled = false;
+            btnConfirmDelete.innerHTML = origBtnText;
           }
         }
       });
@@ -1709,6 +1718,39 @@ class NOCApp {
       });
     }
 
+    // Save Custom Cloud API Backend URL
+    const btnSaveAivenApiUrl = document.getElementById('btnSaveAivenApiUrl');
+    const inputAivenApiUrl = document.getElementById('inputAivenApiUrl');
+    if (btnSaveAivenApiUrl && inputAivenApiUrl) {
+      btnSaveAivenApiUrl.addEventListener('click', async () => {
+        const val = (inputAivenApiUrl.value || '').trim();
+        if (val) {
+          localStorage.setItem('noc_custom_api_url', val);
+          if (window.nocDB) window.nocDB.customApiUrl = val;
+        } else {
+          localStorage.removeItem('noc_custom_api_url');
+          if (window.nocDB) window.nocDB.customApiUrl = null;
+        }
+        btnSaveAivenApiUrl.disabled = true;
+        btnSaveAivenApiUrl.textContent = 'Testing...';
+        try {
+          const connected = await window.nocDB.checkAivenStatus(true);
+          if (connected) {
+            window.showToast('Connected to Cloud Aiven PostgreSQL Backend! ⚡', 'success');
+            await this.refreshData(true);
+          } else {
+            window.showToast('Could not reach backend API at specified URL. Please ensure Vercel backend is deployed.', 'error');
+          }
+        } catch (e) {
+          window.showToast('Connection error: ' + e.message, 'error');
+        } finally {
+          btnSaveAivenApiUrl.disabled = false;
+          btnSaveAivenApiUrl.textContent = '💾 Save & Connect';
+          window.nocUI.renderDatabaseStatus();
+        }
+      });
+    }
+
     // 1. Test Aiven Cloud Database Connection
     if (btnTestAivenConnection) {
       btnTestAivenConnection.addEventListener('click', async () => {
@@ -2232,7 +2274,11 @@ class NOCApp {
       await window.nocDB.bulkDelete(ids);
       window.nocUI.closeBulkDeleteModal();
       window.nocUI.clearRecordSelection();
-      await this.refreshData();
+      // Optimistic client filter + fresh remote sync
+      const idSet = new Set(ids.map(String));
+      this.allRecords = (this.allRecords || []).filter(r => !idSet.has(String(r.id)));
+      this.applyFilters();
+      await this.refreshData(true);
       window.showToast(`Successfully moved ${ids.length} NOC record(s) to Recycle Bin.`, 'info');
       if (window.nocUI.updateRecycleBinBadge) {
         window.nocUI.updateRecycleBinBadge().catch(() => {});

@@ -2492,6 +2492,12 @@ SET password = EXCLUDED.password,
       codeBlock.textContent = this.getSqlSchemaText();
     }
 
+    const aivenApiInput = document.getElementById('inputAivenApiUrl');
+    if (aivenApiInput) {
+      const activeCustom = (window.nocDB && window.nocDB.customApiUrl) || localStorage.getItem('noc_custom_api_url') || '';
+      aivenApiInput.value = activeCustom || (window.location && window.location.origin && window.location.origin.startsWith('http') ? window.location.origin : '');
+    }
+
     this.renderDatabaseStatus();
     this.resetPasswordInputState('inputSupabaseKey', 'btnToggleSupabaseKey', 'Show API key');
     if (modal) modal.classList.add('active');

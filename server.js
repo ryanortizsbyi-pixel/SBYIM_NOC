@@ -89,11 +89,10 @@ const pool = new Pool({
     ca: caCert,
     rejectUnauthorized: false
   },
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
-  keepAlive: true,
-  keepAliveInitialDelayMillis: 10000
+  max: 5,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 5000,
+  allowExitOnIdle: true
 });
 
 // Periodic TCP Keep-Alive query to maintain active SSL connection with Aiven Cloud
@@ -265,6 +264,9 @@ function mapRecordToDb(rec) {
     docs = [rec.documents];
   }
 
+  const rawIssuance = rec.dateOfIssuance || rec.date_of_issuance;
+  const rawExpiration = rec.dateOfExpiration || rec.date_of_expiration;
+
   return {
     id: rec.id || 'noc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
     noc_number: (rec.nocNumber || rec.noc_number || '').trim(),
@@ -272,8 +274,8 @@ function mapRecordToDb(rec) {
     client: (rec.client || '').trim(),
     issued_to: (rec.issuedTo || rec.issued_to || '').trim().toUpperCase(),
     company_code: (rec.companyCode || rec.company_code || '').trim(),
-    date_of_issuance: rec.dateOfIssuance || rec.date_of_issuance,
-    date_of_expiration: rec.dateOfExpiration || rec.date_of_expiration,
+    date_of_issuance: (rawIssuance && String(rawIssuance).trim() !== '') ? String(rawIssuance).trim() : null,
+    date_of_expiration: (rawExpiration && String(rawExpiration).trim() !== '') ? String(rawExpiration).trim() : null,
     description: rec.description || '',
     documents: JSON.stringify(docs),
     created_at: rec.createdAt || rec.created_at || new Date().toISOString(),
@@ -607,9 +609,12 @@ app.post('/api/records/bulk-delete', async (req, res) => {
       ]);
     }
     const result = await pool.query('DELETE FROM public.noc_records WHERE id = ANY($1)', [ids]);
+    invalidateRecordsCache();
+    await loadLightweightRecordsFromDb().catch(() => {});
     res.json({ success: true, deleted: result.rowCount });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    const errorDetails = logDatabaseError('POST /api/records/bulk-delete', err);
+    res.status(500).json({ success: false, error: err.message, details: errorDetails });
   }
 });
 
@@ -639,7 +644,8 @@ app.get('/api/records', async (req, res) => {
       records = records.slice(0, limit);
     }
 
-    res.set('Cache-Control', 'public, max-age=10');
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
     res.json({ success: true, count: records.length, data: records });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -730,7 +736,9 @@ app.put('/api/records/:id', async (req, res) => {
 // Delete an NOC record (archives to noc_deleted_records before removing)
 app.delete('/api/records/:id', async (req, res) => {
   try {
-    const existing = await pool.query('SELECT * FROM public.noc_records WHERE id = $1', [req.params.id]);
+    const id = decodeURIComponent(req.params.id);
+    const deletedBy = (req.body && req.body.deletedBy) || 'System Administrator';
+    const existing = await pool.query('SELECT * FROM public.noc_records WHERE id = $1', [id]);
     if (existing.rows.length > 0) {
       const rec = existing.rows[0];
       let docsJson = '[]';
@@ -758,16 +766,17 @@ app.delete('/api/records/:id', async (req, res) => {
       `, [
         rec.id, rec.noc_number, rec.noc_type, rec.client, rec.issued_to, rec.company_code,
         rec.date_of_issuance, rec.date_of_expiration, rec.description, docsJson,
-        req.body.deletedBy || 'System Administrator', rec.created_at
+        deletedBy, rec.created_at
       ]).catch(err => console.warn('Archive to deleted records warning:', err.message));
     }
 
-    const result = await pool.query('DELETE FROM public.noc_records WHERE id = $1 RETURNING id', [req.params.id]);
+    const result = await pool.query('DELETE FROM public.noc_records WHERE id = $1 RETURNING id', [id]);
     invalidateRecordsCache();
-    loadLightweightRecordsFromDb().catch(() => {});
-    res.json({ success: true, deletedId: req.params.id, count: result.rowCount });
+    await loadLightweightRecordsFromDb().catch(() => {});
+    res.json({ success: true, deletedId: id, count: result.rowCount });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    const errorDetails = logDatabaseError('DELETE /api/records/:id', err);
+    res.status(500).json({ success: false, error: err.message, details: errorDetails });
   }
 });
 

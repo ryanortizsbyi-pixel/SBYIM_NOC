@@ -976,12 +976,20 @@ class NOCDatabase {
       targetRecord = await this.getById(id) || await this._localGetById(id);
     } catch (e) {}
 
+    const deletedBy = (window.nocAuth && window.nocAuth.currentUser && (window.nocAuth.currentUser.displayName || window.nocAuth.currentUser.username)) || 'System Administrator';
+    const deletedAt = new Date().toISOString();
+
+    // 0. Invalidate in-memory cache immediately
+    if (this._memoryCache && Array.isArray(this._memoryCache)) {
+      this._memoryCache = this._memoryCache.filter(r => String(r.id) !== String(id));
+    }
+
     // 1. Archive to Recycle Bin / Deleted store
     if (targetRecord) {
       const deletedRecord = {
         ...targetRecord,
-        deletedAt: new Date().toISOString(),
-        deletedBy: (window.nocAuth && window.nocAuth.currentUser && (window.nocAuth.currentUser.displayName || window.nocAuth.currentUser.username)) || 'System Administrator'
+        deletedAt,
+        deletedBy
       };
       await this._localSaveDeleted(deletedRecord).catch(() => {});
 
@@ -999,9 +1007,15 @@ class NOCDatabase {
     // 2. Delete from Aiven Cloud if active
     if (this.isAivenActive()) {
       try {
-        await fetch(this.getApiUrl('/api/records/' + encodeURIComponent(id)), { method: 'DELETE' });
-        await this._localDelete(id).catch(() => {});
-        return true;
+        const res = await fetch(this.getApiUrl('/api/records/' + encodeURIComponent(id)), {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deletedBy })
+        });
+        if (res.ok) {
+          await this._localDelete(id).catch(() => {});
+          return true;
+        }
       } catch (err) {
         console.warn('Aiven delete failed:', err.message);
       }
@@ -1036,8 +1050,14 @@ class NOCDatabase {
   async bulkDelete(ids = []) {
     if (!Array.isArray(ids) || ids.length === 0) return { success: true, count: 0 };
 
-    const deletedBy = (window.nocAuth && window.nocAuth.currentUser && (window.nocAuth.currentUser.displayName || window.nocAuth.currentUser.username)) || 'Developer';
+    const deletedBy = (window.nocAuth && window.nocAuth.currentUser && (window.nocAuth.currentUser.displayName || window.nocAuth.currentUser.username)) || 'System Administrator';
     const deletedAt = new Date().toISOString();
+    const idSet = new Set(ids.map(String));
+
+    // 0. Invalidate in-memory cache immediately
+    if (this._memoryCache && Array.isArray(this._memoryCache)) {
+      this._memoryCache = this._memoryCache.filter(r => !idSet.has(String(r.id)));
+    }
 
     // 1. Archive each record to local Recycle Bin
     for (const id of ids) {
