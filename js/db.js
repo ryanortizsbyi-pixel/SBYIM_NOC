@@ -1061,22 +1061,7 @@ class NOCDatabase {
     }
     this._cacheTimestamp = 0;
 
-    // 1. Archive each record to local Recycle Bin
-    for (const id of cleanIds) {
-      try {
-        const rec = await this.getById(id) || await this._localGetById(id);
-        if (rec) {
-          const archived = {
-            ...rec,
-            deletedAt,
-            deletedBy
-          };
-          await this._localSaveDeleted(archived).catch(() => {});
-        }
-      } catch (e) {}
-    }
-
-    // 2. Delete from Aiven Cloud if active
+    // 1. Delete from Aiven Cloud if active (single ultra-fast atomic batch query)
     if (this.isAivenActive()) {
       try {
         const res = await fetch(this.getApiUrl('/api/records/bulk-delete'), {
@@ -1099,7 +1084,7 @@ class NOCDatabase {
       }
     }
 
-    // 3. Delete from Supabase if active
+    // 2. Delete from Supabase if active
     if (this.isSupabaseActive()) {
       try {
         const client = this.getSupabaseClient();
@@ -1119,7 +1104,7 @@ class NOCDatabase {
       }
     }
 
-    // 4. Local IndexedDB fallback bulk delete
+    // 3. Local IndexedDB fallback bulk delete
     for (const id of cleanIds) {
       await this._localDelete(id).catch(() => {});
     }
@@ -1127,72 +1112,80 @@ class NOCDatabase {
   }
 
   /**
-   * Retrieve all deleted records from Recycle Bin.
+   * Retrieve all deleted records from Recycle Bin (Aiven Cloud + Local merged).
    */
   async getDeletedRecords() {
+    let remoteRecords = [];
     if (this.isAivenActive()) {
       try {
         const res = await fetch(this.getApiUrl('/api/records/deleted'), { cache: 'no-store' });
         if (res.ok) {
           const body = await res.json();
           if (body.success && Array.isArray(body.data)) {
-            for (const d of body.data) {
-              await this._localSaveDeleted(d).catch(() => {});
-            }
-            return body.data;
+            remoteRecords = body.data;
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Could not fetch deleted records from Aiven:', e.message);
+      }
     }
-    return this._localGetDeleted();
+
+    const localRecords = await this._localGetDeleted();
+
+    // Merge both sources by ID
+    const recordMap = new Map();
+    if (Array.isArray(localRecords)) {
+      for (const r of localRecords) {
+        if (r && r.id) recordMap.set(String(r.id), r);
+      }
+    }
+    if (Array.isArray(remoteRecords)) {
+      for (const r of remoteRecords) {
+        if (r && r.id) recordMap.set(String(r.id), r);
+      }
+    }
+
+    const merged = Array.from(recordMap.values());
+    merged.sort((a, b) => new Date(b.deletedAt || 0) - new Date(a.deletedAt || 0));
+    return merged;
   }
 
   /**
    * Restore a single deleted record back into active records.
    */
   async restoreDeletedRecord(id) {
-    const deletedList = await this._localGetDeleted();
-    const record = deletedList.find(r => r.id === id);
-    if (!record) {
-      if (this.isAivenActive()) {
-        try {
-          const res = await fetch(this.getApiUrl(`/api/records/${encodeURIComponent(id)}/restore`), { method: 'POST' });
-          if (res.ok) {
-            const body = await res.json();
-            if (body.success && body.data) {
-              await this._localPut(body.data);
-              await this._localRemoveDeleted(id);
-              return body.data;
-            }
-          }
-        } catch (e) {}
-      }
-      throw new Error('Deleted record not found in Recycle Bin.');
-    }
-
-    const restoredRecord = { ...record };
-    delete restoredRecord.deletedAt;
-    delete restoredRecord.deletedBy;
-    restoredRecord.updatedAt = new Date().toISOString();
-
-    // 1. Add back to active database
-    await this.put(restoredRecord);
-
-    // 2. Remove from deleted records store
-    await this._localRemoveDeleted(id);
-
-    // 3. Sync to Aiven if active
     if (this.isAivenActive()) {
       try {
-        await fetch(this.getApiUrl(`/api/records/${encodeURIComponent(id)}/restore`), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(restoredRecord)
-        });
-      } catch (e) {}
+        const res = await fetch(this.getApiUrl(`/api/records/${encodeURIComponent(id)}/restore`), { method: 'POST' });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && body.data) {
+            await this._localPut(body.data).catch(() => {});
+            await this._localRemoveDeleted(id).catch(() => {});
+            this._cacheTimestamp = 0;
+            return body.data;
+          }
+        }
+      } catch (e) {
+        console.warn('Aiven restore error:', e.message);
+      }
     }
 
-    return restoredRecord;
+    const deletedList = await this._localGetDeleted();
+    const record = deletedList.find(r => String(r.id) === String(id));
+    if (record) {
+      const restoredRecord = { ...record };
+      delete restoredRecord.deletedAt;
+      delete restoredRecord.deletedBy;
+      restoredRecord.updatedAt = new Date().toISOString();
+
+      await this.put(restoredRecord);
+      await this._localRemoveDeleted(id);
+      this._cacheTimestamp = 0;
+      return restoredRecord;
+    }
+
+    throw new Error('Deleted record not found in Recycle Bin.');
   }
 
   /**
@@ -1211,6 +1204,7 @@ class NOCDatabase {
         console.warn('Error restoring deleted record:', d.id, e.message);
       }
     }
+    this._cacheTimestamp = 0;
     return restoredCount;
   }
 
@@ -1218,7 +1212,7 @@ class NOCDatabase {
    * Permanently purge a record from Recycle Bin.
    */
   async permanentlyDeleteRecord(id) {
-    await this._localRemoveDeleted(id);
+    await this._localRemoveDeleted(id).catch(() => {});
     if (this.isAivenActive()) {
       try {
         await fetch(this.getApiUrl(`/api/records/deleted/${encodeURIComponent(id)}`), { method: 'DELETE' });
@@ -1231,7 +1225,7 @@ class NOCDatabase {
    * Clear all deleted records from Recycle Bin.
    */
   async clearDeletedRecords() {
-    await this._localClearDeleted();
+    await this._localClearDeleted().catch(() => {});
     if (this.isAivenActive()) {
       try {
         await fetch(this.getApiUrl('/api/records/deleted'), { method: 'DELETE' });
@@ -1244,8 +1238,13 @@ class NOCDatabase {
    * Get count of deleted records currently in Recycle Bin.
    */
   async getDeletedCount() {
-    const records = await this._localGetDeleted();
-    return records ? records.length : 0;
+    try {
+      const records = await this.getDeletedRecords();
+      return records ? records.length : 0;
+    } catch (e) {
+      const records = await this._localGetDeleted();
+      return records ? records.length : 0;
+    }
   }
 
   /**

@@ -581,37 +581,34 @@ app.post('/api/records/bulk-delete', async (req, res) => {
     return res.status(400).json({ success: false, error: 'IDs array required' });
   }
   try {
-    // 1. Fetch records to archive into noc_deleted_records
-    const fetchRes = await pool.query('SELECT * FROM public.noc_records WHERE id::text = ANY($1::text[])', [ids]);
-    for (const r of fetchRes.rows) {
-      let docsJson = '[]';
-      if (r.documents) {
-        docsJson = typeof r.documents === 'string' ? r.documents : JSON.stringify(r.documents);
-      }
-      await pool.query(`
-        INSERT INTO public.noc_deleted_records (
-          id, noc_number, noc_type, client, issued_to, company_code,
-          date_of_issuance, date_of_expiration, description, documents,
-          deleted_at, deleted_by, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        ON CONFLICT (id) DO UPDATE
-        SET noc_number = EXCLUDED.noc_number,
-            noc_type = EXCLUDED.noc_type,
-            client = EXCLUDED.client,
-            issued_to = EXCLUDED.issued_to,
-            company_code = EXCLUDED.company_code,
-            date_of_issuance = EXCLUDED.date_of_issuance,
-            date_of_expiration = EXCLUDED.date_of_expiration,
-            description = EXCLUDED.description,
-            documents = EXCLUDED.documents,
-            deleted_at = EXCLUDED.deleted_at,
-            deleted_by = EXCLUDED.deleted_by;
-      `, [
-        r.id, r.noc_number, r.noc_type, r.client, r.issued_to, r.company_code,
-        r.date_of_issuance, r.date_of_expiration, r.description, docsJson,
-        new Date().toISOString(), deletedBy, r.created_at
-      ]).catch(err => console.warn('Bulk archive item error:', err.message));
-    }
+    // 1. Direct atomic copy of all records into noc_deleted_records
+    await pool.query(`
+      INSERT INTO public.noc_deleted_records (
+        id, noc_number, noc_type, client, issued_to, company_code,
+        date_of_issuance, date_of_expiration, description, documents,
+        deleted_at, deleted_by, created_at
+      )
+      SELECT 
+        id, noc_number, noc_type, client, issued_to, company_code,
+        date_of_issuance, date_of_expiration, description, documents,
+        timezone('utc'::text, now()), $2, created_at
+      FROM public.noc_records
+      WHERE id::text = ANY($1::text[])
+      ON CONFLICT (id) DO UPDATE
+      SET noc_number = EXCLUDED.noc_number,
+          noc_type = EXCLUDED.noc_type,
+          client = EXCLUDED.client,
+          issued_to = EXCLUDED.issued_to,
+          company_code = EXCLUDED.company_code,
+          date_of_issuance = EXCLUDED.date_of_issuance,
+          date_of_expiration = EXCLUDED.date_of_expiration,
+          description = EXCLUDED.description,
+          documents = EXCLUDED.documents,
+          deleted_at = timezone('utc'::text, now()),
+          deleted_by = EXCLUDED.deleted_by;
+    `, [ids, deletedBy]);
+
+    // 2. Delete from active noc_records
     const result = await pool.query('DELETE FROM public.noc_records WHERE id::text = ANY($1::text[])', [ids]);
     invalidateRecordsCache();
     loadLightweightRecordsFromDb().catch(() => {});
